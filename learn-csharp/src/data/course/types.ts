@@ -2,7 +2,6 @@ import type { ComponentType } from "react";
 
 export interface ILessonComponentProps {
   completedChecklistIds: string[];
-  onGoToModule: (moduleId: string) => void;
   onToggleChecklistItem: (checklistItemId: string) => void;
 }
 

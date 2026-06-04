@@ -35,17 +35,7 @@ export const useCoursePage = () => {
     setActiveModuleId(moduleId);
     setActiveSectionId(sectionId);
     progress.setActiveSection(moduleId, sectionId);
-    document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  const selectModule = (moduleId: string) => {
-    const module = courseModules.find((item) => item.id === moduleId);
-
-    if (!module) {
-      return;
-    }
-
-    selectSection(module.id, module.sections[0].id);
+    window.scrollTo({ top: 0 });
   };
 
   const continueLearning = () => {
@@ -69,7 +59,6 @@ export const useCoursePage = () => {
     courseModules,
     currentSection,
     progress,
-    selectModule,
     selectSection,
   };
 };

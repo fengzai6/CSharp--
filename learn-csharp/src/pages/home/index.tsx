@@ -11,7 +11,6 @@ export const Home = () => {
     courseModules,
     currentSection,
     progress,
-    selectModule,
     selectSection,
   } = useCoursePage();
 
@@ -33,8 +32,9 @@ export const Home = () => {
           completedChecklistIds={progress.completedChecklistIds}
           completedSectionIds={progress.completedSectionIds}
           module={activeModule}
+          modules={courseModules}
           section={currentSection}
-          onGoToModule={selectModule}
+          onSelectSection={selectSection}
           onToggleChecklistItem={progress.toggleChecklistItem}
           onToggleSection={progress.toggleSection}
         />

@@ -1,4 +1,8 @@
-import { CheckSquareOutlined, RightCircleOutlined } from "@ant-design/icons";
+import {
+  CheckCircleOutlined,
+  CheckSquareOutlined,
+  RightCircleOutlined,
+} from "@ant-design/icons";
 import { Button, Checkbox } from "antd";
 import type { ReactNode } from "react";
 
@@ -22,10 +26,11 @@ interface ILessonChecklistProps {
 }
 
 interface INextLessonProps {
-  label: string;
-  onGoToModule: (moduleId: string) => void;
-  targetModuleId: string;
+  nextLabel: string;
+  sectionCompleted: boolean;
   text: string;
+  onCompleteAndNext: () => void;
+  onNext: () => void;
 }
 
 interface ILessonTableProps {
@@ -33,119 +38,10 @@ interface ILessonTableProps {
   rows: string[][];
 }
 
-interface ILessonParagraphBlock {
-  text: string;
-  type: "paragraph";
-}
-
-interface ILessonQuoteBlock {
-  text: string;
-  type: "quote";
-}
-
-interface ILessonHeadingBlock {
-  level: 2 | 3 | 4;
-  text: string;
-  type: "heading";
-}
-
-interface ILessonListBlock {
-  items: string[];
-  ordered: boolean;
-  title?: string;
-  type: "list";
-}
-
-interface ILessonChecklistBlock {
-  id: string;
-  items: string[];
-  title: string;
-  type: "checklist";
-}
-
-interface ILessonCodeBlock {
-  code: string;
-  language: string;
-  title: string;
-  type: "code";
-}
-
-interface ILessonTableBlock {
-  headers: string[];
-  rows: string[][];
-  type: "table";
-}
-
-interface IStructuredLessonProps {
-  blocks: ILessonBlock[];
-  completedChecklistIds: string[];
-  lessonId: string;
-  nextLesson?: Omit<INextLessonProps, "onGoToModule">;
-  onGoToModule: (moduleId: string) => void;
-  onToggleChecklistItem: (checklistItemId: string) => void;
-  title: string;
-}
-
-export type ILessonBlock =
-  | ILessonChecklistBlock
-  | ILessonCodeBlock
-  | ILessonHeadingBlock
-  | ILessonListBlock
-  | ILessonParagraphBlock
-  | ILessonQuoteBlock
-  | ILessonTableBlock;
-
-const renderInlineText = (text: string) => {
-  const nodes: ReactNode[] = [];
-  const inlinePattern = /(`[^`]+`|\*\*[^*]+\*\*)/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = inlinePattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      nodes.push(text.slice(lastIndex, match.index));
-    }
-
-    const token = match[0];
-
-    if (token.startsWith("`")) {
-      nodes.push(
-        <code key={`${token}-${match.index}`}>{token.slice(1, -1)}</code>,
-      );
-    } else {
-      nodes.push(
-        <strong key={`${token}-${match.index}`}>{token.slice(2, -2)}</strong>,
-      );
-    }
-
-    lastIndex = inlinePattern.lastIndex;
-  }
-
-  if (lastIndex < text.length) {
-    nodes.push(text.slice(lastIndex));
-  }
-
-  return nodes;
-};
-
 export const LessonShell = ({ children }: ILessonShellProps) => (
-  <article className="space-y-5 text-base leading-8 text-slate-700">
+  <article className="lesson-content space-y-5 text-base leading-8 text-slate-700">
     {children}
   </article>
-);
-
-export const LessonTitle = ({ children }: ILessonShellProps) => (
-  <h2 className="text-3xl font-semibold tracking-normal text-slate-950">
-    {children}
-  </h2>
-);
-
-export const LessonHeading = ({ children }: ILessonShellProps) => (
-  <h3 className="pt-4 text-2xl font-semibold text-slate-950">{children}</h3>
-);
-
-export const LessonSubheading = ({ children }: ILessonShellProps) => (
-  <h4 className="pt-3 text-xl font-semibold text-slate-950">{children}</h4>
 );
 
 export const LessonQuote = ({ children }: ILessonShellProps) => (
@@ -230,9 +126,10 @@ export const LessonTable = ({ headers, rows }: ILessonTableProps) => (
 );
 
 export const NextLesson = ({
-  label,
-  onGoToModule,
-  targetModuleId,
+  nextLabel,
+  onCompleteAndNext,
+  onNext,
+  sectionCompleted,
   text,
 }: INextLessonProps) => (
   <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-5">
@@ -241,117 +138,35 @@ export const NextLesson = ({
       下一步
     </h4>
     <p className="mb-4 text-sm leading-6 text-emerald-950">{text}</p>
-    <Button
-      icon={<RightCircleOutlined />}
-      iconPlacement="end"
-      type="primary"
-      onClick={() => onGoToModule(targetModuleId)}
-    >
-      {label}
-    </Button>
+    <div className="flex flex-wrap gap-3">
+      {sectionCompleted ? (
+        <Button
+          icon={<RightCircleOutlined />}
+          iconPlacement="end"
+          type="primary"
+          onClick={onNext}
+        >
+          {nextLabel}
+        </Button>
+      ) : (
+        <>
+          <Button
+            icon={<CheckCircleOutlined />}
+            type="primary"
+            onClick={onCompleteAndNext}
+          >
+            标记完成并继续
+          </Button>
+          <Button
+            icon={<RightCircleOutlined />}
+            iconPlacement="end"
+            onClick={onNext}
+          >
+            {nextLabel}
+          </Button>
+        </>
+      )}
+    </div>
   </section>
 );
 
-export const StructuredLesson = ({
-  blocks,
-  completedChecklistIds,
-  lessonId,
-  nextLesson,
-  onGoToModule,
-  onToggleChecklistItem,
-  title,
-}: IStructuredLessonProps) => (
-  <LessonShell>
-    <LessonTitle>{title}</LessonTitle>
-    {blocks.map((block, index) => {
-      const blockKey = `${lessonId}-${block.type}-${index}`;
-
-      if (block.type === "paragraph") {
-        return <p key={blockKey}>{renderInlineText(block.text)}</p>;
-      }
-
-      if (block.type === "quote") {
-        return (
-          <LessonQuote key={blockKey}>{renderInlineText(block.text)}</LessonQuote>
-        );
-      }
-
-      if (block.type === "heading") {
-        if (block.level === 2) {
-          return (
-            <LessonHeading key={blockKey}>
-              {renderInlineText(block.text)}
-            </LessonHeading>
-          );
-        }
-
-        return (
-          <LessonSubheading key={blockKey}>
-            {renderInlineText(block.text)}
-          </LessonSubheading>
-        );
-      }
-
-      if (block.type === "code") {
-        return (
-          <LessonCode
-            key={blockKey}
-            code={block.code}
-            language={block.language}
-            title={block.title}
-          />
-        );
-      }
-
-      if (block.type === "table") {
-        return (
-          <LessonTable key={blockKey} headers={block.headers} rows={block.rows} />
-        );
-      }
-
-      if (block.type === "checklist") {
-        return (
-          <LessonChecklist
-            key={blockKey}
-            completedChecklistIds={completedChecklistIds}
-            id={`${lessonId}-${block.id}`}
-            items={block.items}
-            title={block.title}
-            onToggleChecklistItem={onToggleChecklistItem}
-          />
-        );
-      }
-
-      return (
-        <section key={blockKey} className="space-y-3">
-          {block.title ? (
-            <h4 className="text-base font-semibold text-slate-950">
-              {renderInlineText(block.title)}
-            </h4>
-          ) : null}
-          {block.ordered ? (
-            <ol className="list-decimal space-y-2 pl-6">
-              {block.items.map((item) => (
-                <li key={item}>{renderInlineText(item)}</li>
-              ))}
-            </ol>
-          ) : (
-            <ul className="list-disc space-y-2 pl-6">
-              {block.items.map((item) => (
-                <li key={item}>{renderInlineText(item)}</li>
-              ))}
-            </ul>
-          )}
-        </section>
-      );
-    })}
-    {nextLesson ? (
-      <NextLesson
-        label={nextLesson.label}
-        targetModuleId={nextLesson.targetModuleId}
-        text={nextLesson.text}
-        onGoToModule={onGoToModule}
-      />
-    ) : null}
-  </LessonShell>
-);
