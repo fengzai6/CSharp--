@@ -250,6 +250,13 @@ dotnet ef migrations add InitialCreate --context ApplicationDbContext`}
         <li>软删除用全局过滤器时有哪些边界情况？</li>
       </ul>
 
+      <TeacherTask title="Phase 2 练习">
+        <p>
+          在复刻项目中完成 Phase 2：接入 EF Core + PostgreSQL，创建 DbContext 和
+          Migration，跑通第一次 <code>dotnet ef database update</code>。
+        </p>
+      </TeacherTask>
+
       <LessonChecklist
         completedChecklistIds={completedChecklistIds}
         id="ef-dbcontext-checklist"

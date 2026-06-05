@@ -110,6 +110,14 @@ Core 不依赖其他项目`}
         </li>
       </ul>
 
+      <TeacherTask title="Phase 0 练习">
+        <p>
+          在复刻项目中完成 Phase 0：使用 <code>dotnet new sln</code> 和{" "}
+          <code>dotnet new webapi</code> / <code>classlib</code> 创建
+          Api/Core/Infrastructure 三层项目结构，建立正确的项目引用关系。
+        </p>
+      </TeacherTask>
+
       <LessonChecklist
         completedChecklistIds={completedChecklistIds}
         id="setup-solution-checklist"

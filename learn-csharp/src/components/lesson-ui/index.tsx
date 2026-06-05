@@ -92,6 +92,8 @@ export const LessonChecklist = ({
 
 export const LessonCode = CodeCopy;
 
+export { LessonCodeCompare } from "@/components/lesson-code-compare";
+
 export const LessonTable = ({ headers, rows }: ILessonTableProps) => (
   <div className="overflow-x-auto rounded-lg border border-slate-200">
     <table className="min-w-full border-collapse bg-white text-sm">

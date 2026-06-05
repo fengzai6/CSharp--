@@ -1,6 +1,7 @@
 import {
   LessonChecklist,
   LessonCode,
+  LessonCodeCompare,
   LessonQuote,
   LessonShell,
   LessonTable,
@@ -69,18 +70,18 @@ public class UsersController : ControllerBase
         和 <code>[Route]</code> 标注。对照 NestJS：
       </p>
 
-      <LessonCode
-        code={`// NestJS
-@Controller('auth')
+      <LessonCodeCompare
+        leftTitle="NestJS"
+        leftCode={`@Controller('auth')
 export class AuthController {
   @Post('login')
   async login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
-}
-
-// ASP.NET Core
-[ApiController]
+}`}
+        leftLanguage="typescript"
+        rightTitle="ASP.NET Core"
+        rightCode={`[ApiController]
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
@@ -97,8 +98,7 @@ public class AuthController : ControllerBase
         return Ok(await _authService.LoginAsync(dto));
     }
 }`}
-        language="csharp"
-        title="Controller 基础对照"
+        rightLanguage="csharp"
       />
 
       <h4>HTTP 方法映射</h4>
@@ -114,16 +114,15 @@ public class AuthController : ControllerBase
       />
 
       <h4>路由参数</h4>
-      <LessonCode
-        code={`// NestJS
-@Get(':id')
-findOne(@Param('id') id: string) { ... }
-
-// ASP.NET Core
-[HttpGet("{id}")]
+      <LessonCodeCompare
+        leftTitle="NestJS"
+        leftCode={`@Get(':id')
+findOne(@Param('id') id: string) { ... }`}
+        leftLanguage="typescript"
+        rightTitle="ASP.NET Core"
+        rightCode={`[HttpGet("{id}")]
 public ActionResult Get(string id) { ... }`}
-        language="csharp"
-        title="路由参数"
+        rightLanguage="csharp"
       />
 
       <h4>模型绑定</h4>
@@ -170,20 +169,19 @@ public ActionResult Get(string id) { ... }`}
         对应 NestJS Guard，用 <code>[Authorize]</code> 属性按认证方案或策略保护端点：
       </p>
 
-      <LessonCode
-        code={`// NestJS
-@UseGuards(JwtAuthGuard)
+<LessonCodeCompare
+        leftTitle="NestJS"
+        leftCode={`@UseGuards(JwtAuthGuard)
 @RolesGuard('admin')
 @Post('delete')
-async delete(@RequestUser() user: User, @Param('id') id: string) { ... }
-
-// ASP.NET Core
-[Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+async delete(@RequestUser() user: User, @Param('id') id: string) { ... }`}
+        leftLanguage="typescript"
+        rightTitle="ASP.NET Core"
+        rightCode={`[Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
 [Authorize(Policy = "AdminOnly")]
 [HttpDelete("{id}")]
 public async Task<IActionResult> Delete(string id) { ... }`}
-        language="csharp"
-        title="Authorize 属性"
+        rightLanguage="csharp"
       />
 
       <h4>策略配置</h4>
@@ -274,6 +272,13 @@ public async Task<IActionResult> DeleteGroup(string id) { ... }`}
           <code>Scoped</code> 服务？为什么要小心？
         </li>
       </ul>
+
+      <TeacherTask title="Phase 1 练习">
+        <p>
+          在复刻项目中完成 Phase 1：实现 User CRUD — Controller + Service + DTO
+          三层分离，加入 FluentValidation 验证。
+        </p>
+      </TeacherTask>
 
       <LessonChecklist
         completedChecklistIds={completedChecklistIds}

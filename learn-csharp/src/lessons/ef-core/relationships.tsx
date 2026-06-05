@@ -333,6 +333,13 @@ var groups = await _context.Groups
         <li>为什么权限、成员这类多对多关系推荐显式中间实体而不是 skip navigation？</li>
       </ul>
 
+      <TeacherTask title="Phase 4 练习">
+        <p>
+          在复刻项目中完成 Phase 4：实现群组系统 — 树形 Group 结构、Member
+          关系、批量添加成员事务。
+        </p>
+      </TeacherTask>
+
       <LessonChecklist
         completedChecklistIds={completedChecklistIds}
         id="ef-relationships-checklist"

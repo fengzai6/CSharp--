@@ -198,6 +198,13 @@ if (!result.Succeeded)
         <li>什么时候需要资源级授权？</li>
       </ul>
 
+      <TeacherTask title="Phase 3 练习">
+        <p>
+          在复刻项目中完成 Phase 3：实现完整认证授权 — JWT 登录、Refresh Token
+          轮换、Role/Permission RBAC、Policy 授权。
+        </p>
+      </TeacherTask>
+
       <LessonChecklist
         completedChecklistIds={completedChecklistIds}
         id="auth-refresh-policy-checklist"

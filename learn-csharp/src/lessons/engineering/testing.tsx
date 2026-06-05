@@ -307,6 +307,13 @@ public class UsersControllerIntegrationTests : IAsyncLifetime
         <li>为什么数据库集成测试更推荐 Testcontainers 而不是 EF Core InMemory？</li>
       </ul>
 
+      <TeacherTask title="Phase 6 练习">
+        <p>
+          在复刻项目中完成 Phase 6：建立工程化体系 — 测试（单元+集成）、结构化日志、健康检查、Swagger、Redis
+          缓存、Docker 发布。
+        </p>
+      </TeacherTask>
+
       <LessonChecklist
         completedChecklistIds={completedChecklistIds}
         id="engineering-testing-checklist"

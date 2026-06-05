@@ -1,6 +1,7 @@
 import {
   LessonChecklist,
   LessonCode,
+  LessonCodeCompare,
   LessonQuote,
   LessonShell,
   LessonTable,
@@ -84,20 +85,25 @@ app.Run();`}
 
       <h3>Hub 核心概念</h3>
       <h4>Hub 对应 Gateway</h4>
-      <LessonCode
-        code={`// NestJS
-@WebSocketGateway({ namespace: '/socket' })
-export class SocketGateway implements OnGatewayConnection { ... }
-
-// SignalR
-public class ChatHub : Hub
+      <LessonCodeCompare
+        leftTitle="NestJS Socket.IO"
+        leftCode={`@WebSocketGateway({ namespace: '/socket' })
+export class SocketGateway implements OnGatewayConnection {
+  @SubscribeMessage('join-room')
+  handleJoinRoom(client: Socket, room: string) { ... }
+}`}
+        leftLanguage="typescript"
+        rightTitle="ASP.NET Core SignalR"
+        rightCode={`public class ChatHub : Hub
 {
     // Hub 是 SignalR 的核心类，类似 Gateway
     // - 继承 Hub 获得连接管理、组管理、消息发送能力
-    // - 方法名默认对所有客户端暴露（除非加 [NotAuthorized] 属性）
+    // - 方法名默认对所有客户端暴露
+
+    [HubMethodName("JoinRoom")]
+    public async Task JoinRoom(string room) { ... }
 }`}
-        language="csharp"
-        title="Hub 类"
+        rightLanguage="csharp"
       />
 
       <h4>客户端调用服务端方法</h4>
@@ -406,6 +412,13 @@ public class ChatHub : Hub
         </li>
         <li>Groups 和数据库里的群组成员关系有什么区别？</li>
       </ul>
+
+      <TeacherTask title="Phase 5 练习">
+        <p>
+          在复刻项目中完成 Phase 5：实现实时通信 — SignalR Hub、房间系统、点对点消息、广播，对比你的
+          NestJS Socket.IO 实现。
+        </p>
+      </TeacherTask>
 
       <LessonChecklist
         completedChecklistIds={completedChecklistIds}
