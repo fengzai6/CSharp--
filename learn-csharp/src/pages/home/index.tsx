@@ -19,6 +19,7 @@ export const Home = () => {
       assistant={
         <CourseAssistant
           activeSectionId={currentSection.id}
+          completedSectionIds={progress.completedSectionIds}
           module={activeModule}
           sections={activeModule.sections}
           onResetProgress={progress.resetProgress}

@@ -5,7 +5,18 @@ import { Outlet } from "react-router";
 function App() {
   return (
     <StyleProvider layer>
-      <ConfigProvider>
+      <ConfigProvider
+        theme={{
+          token: {
+            borderRadius: 8,
+            colorPrimary: "#0f766e",
+            colorSuccess: "#047857",
+            colorWarning: "#d97706",
+            fontFamily:
+              'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          },
+        }}
+      >
         <Outlet />
       </ConfigProvider>
     </StyleProvider>

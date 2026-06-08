@@ -45,7 +45,7 @@ export const LessonShell = ({ children }: ILessonShellProps) => (
 );
 
 export const LessonQuote = ({ children }: ILessonShellProps) => (
-  <blockquote className="rounded-lg border-l-4 border-emerald-700 bg-emerald-50 px-4 py-3 text-sm leading-7 text-emerald-950">
+  <blockquote className="rounded-lg border-l-4 border-teal-700 bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-700">
     {children}
   </blockquote>
 );
@@ -134,12 +134,12 @@ export const NextLesson = ({
   sectionCompleted,
   text,
 }: INextLessonProps) => (
-  <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-5">
-    <h4 className="mb-2 flex items-center gap-2 text-lg font-semibold text-emerald-950">
+  <section className="rounded-lg border border-teal-200 bg-teal-50 p-5">
+    <h4 className="mb-2 flex items-center gap-2 text-lg font-semibold text-teal-950">
       <RightCircleOutlined />
       下一步
     </h4>
-    <p className="mb-4 text-sm leading-6 text-emerald-950">{text}</p>
+    <p className="mb-4 text-sm leading-6 text-teal-950">{text}</p>
     <div className="flex flex-wrap gap-3">
       {sectionCompleted ? (
         <Button
@@ -171,4 +171,3 @@ export const NextLesson = ({
     </div>
   </section>
 );
-

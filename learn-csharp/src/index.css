@@ -9,7 +9,7 @@
     font-size: 1.5rem;
     line-height: 2rem;
     font-weight: 600;
-    color: #020617;
+    color: #0f172a;
   }
 
   .lesson-content h4 {
@@ -17,7 +17,7 @@
     font-size: 1.25rem;
     line-height: 1.75rem;
     font-weight: 600;
-    color: #020617;
+    color: #0f172a;
   }
 
   .lesson-content ul {
@@ -35,7 +35,7 @@
   }
 
   .lesson-content li::marker {
-    color: #94a3b8;
+    color: #0f766e;
   }
 
   /* 行内代码（排除代码块内的 code） */
@@ -54,7 +54,7 @@
   }
 
   .lesson-content a {
-    color: #047857;
+    color: #0f766e;
     text-decoration: underline;
     text-underline-offset: 2px;
   }
