@@ -1,17 +1,13 @@
 import {
-  LessonChecklist,
   LessonCode,
   LessonQuote,
   LessonShell,
+  LessonStep,
   LessonTable,
   TeacherTask,
 } from "@/components/lesson-ui";
-import type { ILessonComponentProps } from "@/data/course";
 
-export const AspnetProgramLesson = ({
-  completedChecklistIds,
-  onToggleChecklistItem,
-}: ILessonComponentProps) => {
+export const AspnetProgramLesson = () => {
   return (
     <LessonShell>
       <h3>本节你要掌握什么</h3>
@@ -349,18 +345,248 @@ public class JwtSettings
         </li>
       </ul>
 
-      <LessonChecklist
-        completedChecklistIds={completedChecklistIds}
-        id="aspnet-program-checklist"
-        items={[
-          "搭建最小 ASP.NET Core 项目，对比 main.ts 和 Program.cs",
-          "编写一个自定义中间件（如请求耗时日志）并注册到管道",
-          "编写全局异常处理中间件，按异常类型映射状态码",
-          "实现统一响应格式中间件",
-          "用 IOptions 绑定 appsettings.json 中的强类型配置并启用 ValidateOnStart",
+      <LessonStep
+        title="实战：Program.cs 与中间件"
+        steps={[
+          {
+            title: "搭建最小 ASP.NET Core 项目",
+            content: (
+              <p>
+                创建一个最小的 ASP.NET Core 项目，对比 NestJS 的 <code>main.ts</code> 和 C# 的 <code>Program.cs</code>，理解启动流程。
+              </p>
+            ),
+            code: `var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddControllers();
+
+var app = builder.Build();
+app.MapControllers();
+app.Run();`,
+            codeLanguage: "csharp",
+            codeTitle: "最小 Program.cs",
+            checkpoints: [
+              "builder.Services 注册服务（类似 NestJS 的 Module providers）",
+              "app 构建中间件管道（类似 NestJS 的 middleware）",
+              "app.Run() 启动应用（类似 NestJS 的 app.listen()）",
+            ],
+            reference:
+              "NestJS 用 @Module 装饰器注册服务，C# 用 builder.Services.AddXxx()。NestJS 用 app.use() 注册中间件，C# 用 app.UseXxx()。",
+          },
+          {
+            title: "编写请求耗时中间件",
+            content: (
+              <p>
+                创建一个自定义中间件，记录每个请求的耗时，并注册到管道中。
+              </p>
+            ),
+            code: `// 中间件类
+public class RequestTimingMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<RequestTimingMiddleware> _logger;
+
+    public RequestTimingMiddleware(RequestDelegate next, ILogger<RequestTimingMiddleware> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        var sw = Stopwatch.StartNew();
+        await _next(context);
+        sw.Stop();
+        _logger.LogInformation("Request {Method} {Path} took {ElapsedMs}ms",
+            context.Request.Method, context.Request.Path, sw.ElapsedMilliseconds);
+    }
+}
+
+// 注册到管道
+app.UseMiddleware<RequestTimingMiddleware>();`,
+            codeLanguage: "csharp",
+            codeTitle: "请求耗时中间件",
+            checkpoints: [
+              "中间件通过构造函数注入 RequestDelegate 和 ILogger",
+              "InvokeAsync 方法先执行 await _next(context)，再记录耗时",
+              "用 app.UseMiddleware 注册到管道",
+            ],
+            reference:
+              "中间件的执行顺序由注册顺序决定。如果在 _next(context) 之前记录，就是请求进入；之后记录，就是响应返回。",
+          },
+          {
+            title: "编写全局异常处理中间件",
+            content: (
+              <p>
+                创建异常处理中间件，捕获所有未处理的异常，并按异常类型映射为合适的 HTTP 状态码。
+              </p>
+            ),
+            code: `public class ExceptionHandlingMiddleware
+{
+    private readonly RequestDelegate _next;
+
+    public ExceptionHandlingMiddleware(RequestDelegate next)
+    {
+        _next = next;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
+        {
+            await _next(context);
+        }
+        catch (Exception ex)
+        {
+            context.Response.StatusCode = ex switch
+            {
+                NotFoundException => 404,
+                UnauthorizedException => 401,
+                ForbiddenException => 403,
+                ValidationException => 400,
+                _ => 500
+            };
+            await context.Response.WriteAsJsonAsync(new { error = ex.Message });
+        }
+    }
+}
+
+// 注册（放在管道最前面）
+app.UseMiddleware<ExceptionHandlingMiddleware>();`,
+            codeLanguage: "csharp",
+            codeTitle: "异常处理中间件",
+            checkpoints: [
+              "用 try-catch 包裹 await _next(context)",
+              "用 switch 表达式按异常类型映射状态码",
+              "WriteAsJsonAsync 返回 JSON 错误响应",
+            ],
+            reference:
+              "异常中间件应该放在管道最前面，这样能捕获后续所有中间件和 Controller 抛出的异常。",
+          },
+          {
+            title: "实现统一响应格式中间件",
+            content: (
+              <p>
+                创建中间件，将所有成功响应包装为统一格式（如 <code>{`{ data, success, message }`}</code>）。
+              </p>
+            ),
+            code: `public class ResponseWrapperMiddleware
+{
+    private readonly RequestDelegate _next;
+
+    public ResponseWrapperMiddleware(RequestDelegate next)
+    {
+        _next = next;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        var originalBody = context.Response.Body;
+        using var newBody = new MemoryStream();
+        context.Response.Body = newBody;
+
+        await _next(context);
+
+        if (context.Response.StatusCode == 200)
+        {
+            newBody.Seek(0, SeekOrigin.Begin);
+            var data = await new StreamReader(newBody).ReadToEndAsync();
+            var wrapped = new { data = JsonDocument.Parse(data).RootElement, success = true };
+
+            context.Response.Body = originalBody;
+            await context.Response.WriteAsJsonAsync(wrapped);
+        }
+        else
+        {
+            newBody.Seek(0, SeekOrigin.Begin);
+            await newBody.CopyToAsync(originalBody);
+        }
+    }
+}`,
+            codeLanguage: "csharp",
+            codeTitle: "响应包装中间件",
+            checkpoints: [
+              "替换 Response.Body 为 MemoryStream，拦截响应内容",
+              "只包装 200 状态码的响应",
+              "将原始响应体包装为 { data, success } 格式",
+            ],
+            reference:
+              "这种中间件会影响性能（因为要读取和重写响应体）。生产环境建议在 Controller 层统一返回包装类型，而不是用中间件。",
+          },
+          {
+            title: "用 IOptions 绑定配置",
+            content: (
+              <p>
+                从 <code>appsettings.json</code> 读取配置，绑定为强类型对象，并启用启动时验证。
+              </p>
+            ),
+            code: `// appsettings.json
+{
+  "JwtSettings": {
+    "SecretKey": "your-secret-key",
+    "ExpiresInMinutes": 60
+  }
+}
+
+// 配置类
+public class JwtSettings
+{
+    public string SecretKey { get; set; } = null!;
+    public int ExpiresInMinutes { get; set; }
+}
+
+// Program.cs 注册
+builder.Services.AddOptions<JwtSettings>()
+    .BindConfiguration("JwtSettings")
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+// 使用（通过构造函数注入）
+public class AuthService
+{
+    private readonly JwtSettings _jwtSettings;
+
+    public AuthService(IOptions<JwtSettings> options)
+    {
+        _jwtSettings = options.Value;
+    }
+}`,
+            codeLanguage: "csharp",
+            codeTitle: "IOptions 配置绑定",
+            checkpoints: [
+              "用 BindConfiguration 绑定 appsettings.json 的指定节点",
+              "ValidateOnStart 在启动时验证配置（避免运行时才发现配置错误）",
+              "通过 IOptions<T> 注入，用 options.Value 访问配置",
+            ],
+            reference:
+              "IOptions 是单例，配置在启动时加载后不会改变。如果需要热重载配置，用 IOptionsSnapshot 或 IOptionsMonitor。",
+          },
         ]}
-        title="实战练习清单"
-        onToggleChecklistItem={onToggleChecklistItem}
+        conclusion={
+          <div className="space-y-2">
+            <p className="font-semibold text-teal-900">
+              ✅ 恭喜！你已经理解了 ASP.NET Core 的启动流程和中间件管道。
+            </p>
+            <p>
+              <strong>💡 要点回顾：</strong>
+            </p>
+            <ul className="list-inside list-disc space-y-1 text-sm">
+              <li>
+                Program.cs 分为两部分：builder（注册服务）和 app（配置管道）
+              </li>
+              <li>
+                中间件通过 RequestDelegate 形成管道，执行顺序由注册顺序决定
+              </li>
+              <li>
+                异常中间件放在最前面，能捕获后续所有异常
+              </li>
+              <li>
+                IOptions 绑定强类型配置，ValidateOnStart 在启动时验证
+              </li>
+            </ul>
+            <p className="text-sm">
+              <strong>🎯 验收标准：</strong>能搭建项目、编写自定义中间件、配置 IOptions。
+            </p>
+          </div>
+        }
       />
     </LessonShell>
   );

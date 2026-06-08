@@ -1,17 +1,13 @@
 import {
-  LessonChecklist,
   LessonCode,
   LessonQuote,
   LessonShell,
+  LessonStep,
   LessonTable,
   TeacherTask,
 } from "@/components/lesson-ui";
-import type { ILessonComponentProps } from "@/data/course";
 
-export const EfTransactionsLesson = ({
-  completedChecklistIds,
-  onToggleChecklistItem,
-}: ILessonComponentProps) => {
+export const EfTransactionsLesson = () => {
   return (
     <LessonShell>
       <h3>本章你要掌握什么</h3>
@@ -291,18 +287,217 @@ dotnet ef database update AddUsersAndRolesTables  # 回滚到指定迁移`}
         <li>软删除用全局过滤器时有哪些边界情况？</li>
       </ul>
 
-      <LessonChecklist
-        completedChecklistIds={completedChecklistIds}
-        id="ef-transactions-checklist"
-        items={[
-          "实现 UpdateUserRolesAsync 的事务操作（替换角色）",
-          "实现 SetGroupLeaderAsync 的悲观锁",
-          "添加全局软删除过滤器，并验证恢复场景用 IgnoreQueryFilters",
-          "用 ExecuteUpdateAsync 批量更新一批用户状态，替代循环 save",
-          "创建 Migration 并应用到数据库，再回滚到指定迁移",
+      <LessonStep
+        title="实战：事务与迁移"
+        steps={[
+          {
+            title: "实现事务操作替换用户角色",
+            content: (
+              <p>
+                实现 <code>UpdateUserRolesAsync</code> 方法，在事务中先删除用户的所有旧角色，再添加新角色，确保操作的原子性。
+              </p>
+            ),
+            code: `public async Task UpdateUserRolesAsync(string userId, List<string> newRoleIds)
+{
+    using var transaction = await _context.Database.BeginTransactionAsync();
+    try
+    {
+        // 删除旧角色
+        var oldRoles = await _context.UserRoles
+            .Where(ur => ur.UserId == userId)
+            .ToListAsync();
+        _context.UserRoles.RemoveRange(oldRoles);
+
+        // 添加新角色
+        var newRoles = newRoleIds.Select(roleId => new UserRole
+        {
+            UserId = userId,
+            RoleId = roleId
+        });
+        await _context.UserRoles.AddRangeAsync(newRoles);
+
+        await _context.SaveChangesAsync();
+        await transaction.CommitAsync();
+    }
+    catch
+    {
+        await transaction.RollbackAsync();
+        throw;
+    }
+}`,
+            codeLanguage: "csharp",
+            codeTitle: "事务操作",
+            checkpoints: [
+              "用 BeginTransactionAsync 开启事务",
+              "先删除旧角色，再添加新角色",
+              "SaveChangesAsync 后 CommitAsync",
+              "异常时 RollbackAsync 回滚",
+            ],
+            reference:
+              "事务确保多个操作要么全部成功，要么全部失败。如果只 SaveChangesAsync 不 CommitAsync，事务不会提交。",
+          },
+          {
+            title: "实现悲观锁",
+            content: (
+              <p>
+                用 <code>FromSqlRaw</code> 执行 SELECT FOR UPDATE 实现悲观锁，防止并发修改群组领导者。
+              </p>
+            ),
+            code: `public async Task SetGroupLeaderAsync(string groupId, string newLeaderId)
+{
+    using var transaction = await _context.Database.BeginTransactionAsync();
+
+    // 悲观锁：锁定行直到事务结束
+    var group = await _context.Groups
+        .FromSqlRaw("SELECT * FROM Groups WHERE Id = {0} FOR UPDATE", groupId)
+        .FirstOrDefaultAsync();
+
+    if (group == null) throw new NotFoundException();
+
+    group.LeaderId = newLeaderId;
+    await _context.SaveChangesAsync();
+    await transaction.CommitAsync();
+}`,
+            codeLanguage: "csharp",
+            codeTitle: "悲观锁",
+            checkpoints: [
+              "用 FROM SqlRaw 执行 SELECT FOR UPDATE",
+              "锁定行后，其他事务会等待",
+              "修改后 SaveChangesAsync + CommitAsync",
+            ],
+            reference:
+              "FOR UPDATE 是 PostgreSQL/MySQL 的语法，SQL Server 用 WITH (UPDLOCK, ROWLOCK)。悲观锁适合冲突频繁的场景，否则用乐观锁（版本号）。",
+          },
+          {
+            title: "添加软删除过滤器",
+            content: (
+              <p>
+                在 <code>OnModelCreating</code> 中添加全局查询过滤器，自动过滤已删除的实体。恢复时用 <code>IgnoreQueryFilters</code>。
+              </p>
+            ),
+            code: `// BaseEntity
+public abstract class BaseEntity
+{
+    public string Id { get; set; }
+    public bool IsDeleted { get; set; }
+}
+
+// OnModelCreating
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    modelBuilder.Entity<User>()
+        .HasQueryFilter(u => !u.IsDeleted);
+    modelBuilder.Entity<Group>()
+        .HasQueryFilter(g => !g.IsDeleted);
+}
+
+// 恢复已删除实体（需要 IgnoreQueryFilters）
+public async Task<User?> GetDeletedUserAsync(string id)
+{
+    return await _context.Users
+        .IgnoreQueryFilters()
+        .FirstOrDefaultAsync(u => u.Id == id && u.IsDeleted);
+}`,
+            codeLanguage: "csharp",
+            codeTitle: "软删除过滤器",
+            checkpoints: [
+              "HasQueryFilter 添加全局过滤器",
+              "所有查询自动过滤 IsDeleted = true",
+              "用 IgnoreQueryFilters 查询已删除实体",
+            ],
+            reference:
+              "软删除适合需要恢复数据的场景。硬删除（物理删除）数据无法恢复，但节省存储空间。",
+          },
+          {
+            title: "批量更新用 ExecuteUpdateAsync",
+            content: (
+              <p>
+                用 <code>ExecuteUpdateAsync</code> 直接生成 UPDATE SQL，避免加载实体、循环修改、SaveChanges 的低效模式。
+              </p>
+            ),
+            code: `// ❌ 低效写法（N+1 问题）
+var users = await _context.Users.Where(u => u.IsActive).ToListAsync();
+foreach (var user in users)
+{
+    user.LastLoginAt = DateTime.UtcNow;
+}
+await _context.SaveChangesAsync();
+
+// ✅ 高效写法（一条 UPDATE SQL）
+await _context.Users
+    .Where(u => u.IsActive)
+    .ExecuteUpdateAsync(setters => setters
+        .SetProperty(u => u.LastLoginAt, DateTime.UtcNow));`,
+            codeLanguage: "csharp",
+            codeTitle: "批量更新",
+            checkpoints: [
+              "ExecuteUpdateAsync 直接生成 UPDATE SQL",
+              "不需要 ToListAsync 和 SaveChangesAsync",
+              "性能大幅提升（一次数据库往返 vs N+1 次）",
+            ],
+            reference:
+              "ExecuteUpdateAsync 是 EF Core 7+ 的特性，类似 TypeORM 的 update().set().execute()。适合批量更新简单字段，不适合复杂业务逻辑。",
+          },
+          {
+            title: "创建和回滚迁移",
+            content: (
+              <p>
+                用 <code>dotnet ef migrations</code> 创建迁移、应用到数据库，并回滚到指定迁移。
+              </p>
+            ),
+            code: `# 创建迁移
+dotnet ef migrations add AddSoftDelete
+
+# 应用到数据库
+dotnet ef database update
+
+# 查看所有迁移
+dotnet ef migrations list
+
+# 回滚到指定迁移
+dotnet ef database update PreviousMigrationName
+
+# 移除最后一个迁移（未应用的）
+dotnet ef migrations remove`,
+            codeLanguage: "bash",
+            codeTitle: "迁移管理",
+            checkpoints: [
+              "migrations add 生成迁移文件",
+              "database update 应用迁移",
+              "回滚时指定目标迁移名称",
+              "remove 只能移除未应用的迁移",
+            ],
+            reference:
+              "迁移文件存储在 Migrations 文件夹。生产环境建议在 CI/CD 中自动应用迁移，不要手动执行。",
+          },
         ]}
-        title="实战练习清单"
-        onToggleChecklistItem={onToggleChecklistItem}
+        conclusion={
+          <div className="space-y-2">
+            <p className="font-semibold text-teal-900">
+              ✅ 恭喜！你已经掌握了 EF Core 的事务、锁和迁移。
+            </p>
+            <p>
+              <strong>💡 要点回顾：</strong>
+            </p>
+            <ul className="list-inside list-disc space-y-1 text-sm">
+              <li>
+                事务确保多操作原子性，异常时回滚
+              </li>
+              <li>
+                悲观锁用 FOR UPDATE，适合冲突频繁场景
+              </li>
+              <li>
+                软删除用全局过滤器，恢复时用 IgnoreQueryFilters
+              </li>
+              <li>
+                ExecuteUpdateAsync 批量更新，避免 N+1
+              </li>
+            </ul>
+            <p className="text-sm">
+              <strong>🎯 验收标准：</strong>能实现事务操作、配置软删除、批量更新、管理迁移。
+            </p>
+          </div>
+        }
       />
     </LessonShell>
   );

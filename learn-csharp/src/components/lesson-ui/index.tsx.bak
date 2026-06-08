@@ -113,7 +113,7 @@ export const LessonCode = CodeCopy;
 
 export { LessonCodeCompare } from "@/components/lesson-code-compare";
 
-export const LessonStep = ({ title, steps, conclusion, defaultCollapsed = false, children }: ILessonStepProps) => (
+export const LessonStep = ({ title, steps, conclusion, defaultCollapsed = false }: ILessonStepProps) => (
   <section className="rounded-lg border border-teal-200 bg-teal-50 p-5">
     <Collapse
       bordered={false}
@@ -130,7 +130,7 @@ export const LessonStep = ({ title, steps, conclusion, defaultCollapsed = false,
           ),
           children: (
             <div className="space-y-4">
-              {children || steps?.map((step, index) => (
+              {steps.map((step, index) => (
                 <div
                   key={`${step.title}-${index}`}
                   className="rounded-lg border border-teal-300 bg-white p-4"
