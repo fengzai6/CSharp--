@@ -66,7 +66,7 @@ public async Task<List<User>> GetUsersAsync(string[] ids)
           ["底层模型", "Event Loop 单线程", "线程池"],
           ["await 行为", "在 Event Loop 上排队", "I/O 完成后回调在线程池执行"],
           ["擅长场景", "异步 I/O（单线程）", "I/O 密集（线程池 + async）"],
-          ["CPU 密集", "会阻塞单线程", "用 Task.Run() 或 Parallel"],
+          ["CPU 密集", "会阻塞单线程", "短任务可 Task.Run，长任务用后台队列 / Worker"],
         ]}
       />
 
@@ -77,11 +77,44 @@ public async Task<int> ComputeExpensiveAsync(int n)
     // 错误：直接阻塞当前请求线程
     // return HeavyComputation(n);
 
-    // 正确：用 Task.Run 放到线程池，并始终 await
+    // 临时可用：把短时间 CPU 计算放到线程池，并始终 await
     return await Task.Run(() => HeavyComputation(n));
 }`}
         language="csharp"
         title="CPU 绑定操作的处理"
+      />
+
+      <LessonQuote>
+        在 ASP.NET Core 请求链路里，<code>Task.Run()</code> 不是免费的性能优化。长时间 CPU
+        任务会继续占用线程池，更适合放到后台队列、<code>BackgroundService</code> 或独立 Worker。
+      </LessonQuote>
+
+      <h4>CancellationToken</h4>
+      <p>
+        Web API 请求取消、客户端断开或超时时，应该把 <code>CancellationToken</code>{" "}
+        从 Controller 传到 Service、EF Core 和 HttpClient，避免后台继续做无意义工作。
+      </p>
+      <LessonCode
+        code={`[HttpGet("{id}")]
+public Task<ActionResult<UserDto>> GetById(
+    string id,
+    CancellationToken cancellationToken)
+{
+    return _userService.GetByIdAsync(id, cancellationToken);
+}
+
+public async Task<UserDto?> GetByIdAsync(
+    string id,
+    CancellationToken cancellationToken)
+{
+    return await _context.Users
+        .AsNoTracking()
+        .Where(u => u.Id == id)
+        .Select(u => new UserDto(u.Id, u.Username, u.Email))
+        .FirstOrDefaultAsync(cancellationToken);
+}`}
+        language="csharp"
+        title="传递 CancellationToken"
       />
 
       <LessonCheckpoint
@@ -104,6 +137,9 @@ public async Task<int> ComputeExpensiveAsync(int n)
           </li>
           <li>
             <strong>CPU 绑定</strong> → 用 Task.Run() 或 Parallel
+          </li>
+          <li>
+            <strong>请求取消</strong> → 传递 CancellationToken 到数据库和 HTTP 调用
           </li>
           <li>
             <strong>不要 .Result 或 .Wait()</strong> → 会产生死锁，始终 await
@@ -168,6 +204,7 @@ log("hello");`}
         <li>
           为什么 Web API 代码里要避免 <code>.Result</code>？
         </li>
+        <li>为什么 CancellationToken 要从 Controller 一路传到数据库查询？</li>
       </ul>
     </LessonShell>
   );

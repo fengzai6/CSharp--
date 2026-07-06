@@ -148,6 +148,22 @@ public class PasswordService
         title="appsettings.json"
       />
 
+      <LessonQuote>
+        示例里把 <code>Secret</code> 写在 JSON 中只是为了说明配置结构。真实项目不要把密钥提交到仓库：本地用
+        <code>dotnet user-secrets</code>，部署时用环境变量或密钥服务，例如 <code>Jwt__Secret</code>。
+      </LessonQuote>
+
+      <LessonCode
+        code={`# 本地开发密钥
+dotnet user-secrets init
+dotnet user-secrets set "Jwt:Secret" "a-long-random-secret-at-least-32-bytes"
+
+# 生产环境环境变量写法
+Jwt__Secret=a-long-random-secret-at-least-32-bytes`}
+        language="bash"
+        title="密钥配置方式"
+      />
+
       <p>注册认证：</p>
       <LessonCode
         code={`builder.Services
@@ -163,6 +179,7 @@ public class PasswordService
             ValidateIssuerSigningKey = true,
             ValidIssuer = jwt["Issuer"],
             ValidAudience = jwt["Audience"],
+            ClockSkew = TimeSpan.FromMinutes(1),
             IssuerSigningKey = new SymmetricSecurityKey(
                 Encoding.UTF8.GetBytes(jwt["Secret"]!))
         };

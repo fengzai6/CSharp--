@@ -66,9 +66,9 @@ public class UsersController : ControllerBase
       <LessonTable
         headers={["生命周期", "NestJS", "ASP.NET Core", "行为"]}
         rows={[
-          ["Singleton", "scope: Scope.SINGLETON", "AddSingleton<T>()", "整个应用生命周期，全局唯一"],
-          ["Scoped", "scope: Scope.REQUEST", "AddScoped<T>()", "每个 HTTP 请求内唯一"],
-          ["Transient", "默认", "AddTransient<T>()", "每次注入创建新实例"],
+          ["Singleton", "默认 / scope: Scope.DEFAULT", "AddSingleton<T>()", "整个应用生命周期，全局唯一"],
+          ["Scoped", "scope: Scope.REQUEST（近似）", "AddScoped<T>()", "每个 HTTP 请求内唯一"],
+          ["Transient", "scope: Scope.TRANSIENT", "AddTransient<T>()", "每次注入创建新实例"],
         ]}
       />
 
@@ -221,10 +221,10 @@ public async Task<IActionResult> Delete(string id) { ... }`}
 
     // 基于声明的策略
     options.AddPolicy("CanDeleteUser", policy =>
-        policy.RequireClaim("Permission", "user:delete"));
+        policy.RequireClaim("permission", "user:delete"));
 
     // 基于资源的策略（自定义 Requirement）
-    options.AddPolicy("OwnerOnly", policy =>
+    options.AddPolicy("GroupOwner", policy =>
         policy.AddRequirements(new GroupOwnerRequirement()));
 });`}
         language="csharp"

@@ -66,11 +66,12 @@ export const SignalrHubLesson = ({
         </p>
       </TeacherTask>
 
-      <h3>安装与配置</h3>
+      <h3>配置 Hub</h3>
       <LessonCode
-        code={`dotnet add package Microsoft.AspNetCore.SignalR`}
+        code={`# ASP.NET Core Web 项目已包含服务端 SignalR
+# 前端客户端另装：npm install @microsoft/signalr`}
         language="bash"
-        title="安装 SignalR"
+        title="SignalR 依赖"
       />
 
       <LessonCode
@@ -139,7 +140,7 @@ public async Task SendMessage(string room, string message)
 await Clients.Caller.SendAsync("NewMessage", data);       // 当前连接
 await Clients.All.SendAsync("Broadcast", data);           // 所有连接
 await Clients.Clients(connectionIds).SendAsync("Msg", data); // 指定连接
-await Clients.Users(userId).SendAsync("Msg", data);       // 指定用户（多设备）
+await Clients.User(userId).SendAsync("Msg", data);        // 指定用户（多设备）
 await Clients.Group(roomId).SendAsync("Msg", data);       // 指定房间
 await Clients.Groups(groupIds).SendAsync("Msg", data);    // 多个房间`}
         language="csharp"
@@ -277,7 +278,7 @@ public class ChatHub : Hub
         var username = Context.User?.FindFirst("name")?.Value ?? "Unknown";
 
         // 发送给目标用户（可能有多设备连接）
-        await Clients.Users(targetUserId).SendAsync("DirectMessage", new
+        await Clients.User(targetUserId).SendAsync("DirectMessage", new
         {
             SenderId = userId,
             SenderUsername = username,
@@ -334,7 +335,7 @@ public class ChatHub : Hub
             UserIdentifier = Context.UserIdentifier, // JWT sub 或自定义
             User = Context.User,                     // ClaimsPrincipal
             Items = Context.Items,                   // 任意键值对
-            Aborted = Context.Features.Get<IHttpConnectionFeature>()?.Transport,
+            ConnectionAborted = Context.ConnectionAborted.IsCancellationRequested,
             Protocol = Context.Protocol,
             LocalIpAddress = Context.Features.Get<IHttpConnectionFeature>()?.LocalIpAddress,
             RemoteIpAddress = Context.Features.Get<IHttpConnectionFeature>()?.RemoteIpAddress,
@@ -393,7 +394,7 @@ public class ChatHub : Hub
 // → SignalR: await Clients.All.SendExcept(Context.ConnectionId).SendAsync("BroadcastMessage", payload)
 
 // NestJS: getUserSockets(targetUserId) → for loop emit
-// → SignalR: await Clients.Users(targetUserId).SendAsync("DirectMessage", payload)`}
+// → SignalR: await Clients.User(targetUserId).SendAsync("DirectMessage", payload)`}
         language="csharp"
         title="NestJS → SignalR 对照"
       />
@@ -412,7 +413,7 @@ public class ChatHub : Hub
         description={
           <p>
             已能搭建 Hub、加入/离开 Groups，并用 <code>Clients.Caller</code>、
-            <code>Clients.Group</code>、<code>Clients.Users</code> 发送不同范围的消息。
+            <code>Clients.Group</code>、<code>Clients.User</code> 发送不同范围的消息。
           </p>
         }
         id="signalr-hub-main"
@@ -424,7 +425,7 @@ public class ChatHub : Hub
       <ul>
         <li>SignalR 和 Socket.IO 为什么不能直接互通？</li>
         <li>
-          <code>Clients.Caller</code>、<code>Clients.Group</code>、<code>Clients.Users</code>{" "}
+          <code>Clients.Caller</code>、<code>Clients.Group</code>、<code>Clients.User</code>{" "}
           分别发送给谁？
         </li>
         <li>Groups 和数据库里的群组成员关系有什么区别？</li>
@@ -441,11 +442,11 @@ public class ChatHub : Hub
 
       <LessonStep title="步骤 1：搭建最小 SignalR Hub 项目" defaultCollapsed>
         <h4>任务说明</h4>
-        <p>创建一个空的 ASP.NET Core 项目，安装 SignalR 包，注册服务并映射 Hub 端点。</p>
+        <p>创建一个 ASP.NET Core Web 项目，注册 SignalR 服务并映射 Hub 端点。</p>
 
         <h4>实现步骤</h4>
         <ol>
-          <li>创建项目并安装 SignalR 包</li>
+          <li>创建项目</li>
           <li>创建 ChatHub 类并继承 Hub</li>
           <li>在 Program.cs 中注册 SignalR 服务</li>
           <li>映射 Hub 端点路由</li>
@@ -454,10 +455,9 @@ public class ChatHub : Hub
 
         <h4>代码示例</h4>
         <LessonCode
-          code={`// 1. 安装包
+          code={`// 1. 创建项目
 dotnet new webapi -n SignalRChat
-cd SignalRChat
-dotnet add package Microsoft.AspNetCore.SignalR`}
+cd SignalRChat`}
           language="bash"
           title="创建项目"
         />
@@ -644,7 +644,7 @@ await connection.invoke("SendMessage", "room1", "Hello!");`}
         <ol>
           <li>添加 SendDirectMessage 方法</li>
           <li>使用 Clients.Client(connectionId) 发送给指定连接</li>
-          <li>或使用 Clients.Users(userId) 发送给指定用户的所有连接</li>
+          <li>或使用 Clients.User(userId) 发送给指定用户的所有连接</li>
           <li>给发送者发送确认消息</li>
         </ol>
 
@@ -697,7 +697,7 @@ await connection.invoke("SendMessage", "room1", "Hello!");`}
         };
 
         // 发送给目标用户的所有连接（多设备）
-        await Clients.Users(targetUserId).SendAsync("DirectMessage", payload);
+        await Clients.User(targetUserId).SendAsync("DirectMessage", payload);
 
         // 给发送者确认
         await Clients.Caller.SendAsync("MessageSent", new
@@ -972,7 +972,7 @@ builder.Services.AddSignalR()
             ["互通性", "✅ JS/Python/Java 客户端", "✅ .NET/JS/Java 客户端"],
             ["房间管理", "socket.join(room)", "Groups.AddToGroupAsync()"],
             ["广播", "socket.broadcast.emit()", "Clients.AllExcept()"],
-            ["点对点", "手动维护 userId → socketId", "Clients.Users(userId)（需认证）"],
+            ["点对点", "手动维护 userId → socketId", "Clients.User(userId)（需认证）"],
             ["自动重连", "✅ 内置", "✅ 内置"],
             ["类型安全", "需要手动定义事件类型", "强类型 Hub（可选）"],
             ["性能", "Node.js 单线程", ".NET 多线程"],
@@ -1053,7 +1053,7 @@ public class ChatHub : Hub
         <ul>
           <li>✅ 理解 SignalR 和 Socket.IO 协议不兼容</li>
           <li>✅ 理解 Groups 是连接级分组，不是持久化的群组关系</li>
-          <li>✅ 理解 Clients.Users() 需要 JWT 认证才能使用</li>
+          <li>✅ 理解 Clients.User() 需要 JWT 认证才能使用</li>
           <li>✅ 能够根据业务需求选择合适的技术栈</li>
         </ul>
 

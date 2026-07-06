@@ -150,9 +150,10 @@ public static class StringExtensions
         title="扩展方法"
       />
 
-      <h3>Record 类型 — 不可变数据容器</h3>
+      <h3>Record 类型 — 值语义 DTO</h3>
       <p>
-        C# 9+ 引入的特性，已是 DTO 定义的常用方式，对 TS 开发者尤其自然。
+        C# 9+ 引入的特性，已是 DTO 定义的常用方式，对 TS 开发者尤其自然。位置 record
+        默认生成 init-only 属性，但 record 本身不等于强制不可变；如果你显式写 <code>set</code>，它仍然可以被修改。
       </p>
       <LessonCode
         code={`public record UserDto(string Id, string Username, string Email);
@@ -181,7 +182,7 @@ var updated = user with { Username = "alice_new" };`}
         headers={["特性", "class", "record"]}
         rows={[
           ["相等比较", "引用相等（比较地址）", "值相等（比较内容）"],
-          ["不可变性", "需手动写 init", "默认 init 属性"],
+          ["不可变性", "需手动写 init / readonly", "位置 record 默认 init-only，显式 set 仍可变"],
           ["克隆", "需手动实现", "with 表达式"],
           ["适用场景", "Entity（EF 需追踪变更）", "DTO / 值对象"],
         ]}

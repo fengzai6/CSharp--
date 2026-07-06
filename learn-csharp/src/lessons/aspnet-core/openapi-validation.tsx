@@ -62,7 +62,7 @@ export const AspnetOpenApiValidationLesson = ({
 
       <LessonCode
         code={`dotnet add package FluentValidation
-dotnet add package FluentValidation.DependencyInjectionExtensions`}
+dotnet add package FluentValidation.AspNetCore`}
         language="bash"
         title="安装 FluentValidation"
       />
@@ -119,6 +119,10 @@ builder.Services.AddValidatorsFromAssemblyContaining<Program>();`}
         language="csharp"
         title="注册验证器"
       />
+      <LessonQuote>
+        <code>AddFluentValidationAutoValidation()</code> 主要服务 Controller
+        模型绑定流程；Minimal API 通常用 Endpoint Filter 或在端点里显式调用验证器，不要混用两套写法。
+      </LessonQuote>
 
       <h4>class-validator 与 FluentValidation 对比</h4>
       <LessonTable

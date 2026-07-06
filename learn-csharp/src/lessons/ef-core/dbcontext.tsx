@@ -101,9 +101,9 @@ public class ApplicationDbContext : DbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        // 所有 string 列默认用 nvarchar(max)
+        // Provider 中立的约定：限制默认长度，具体列类型交给数据库 provider 映射
         configurationBuilder.Properties<string>()
-            .HaveColumnType("nvarchar(max)");
+            .HaveMaxLength(500);
     }
 }`}
         language="csharp"
@@ -232,8 +232,12 @@ dotnet ef database update
 dotnet ef database update 0      # 回滚到初始状态
 dotnet ef database update AddUsersAndRolesTables  # 回滚到指定迁移
 
-# 从数据库反向生成迁移（Database First）
-dotnet ef migrations add InitialCreate --context ApplicationDbContext`}
+# 从已有数据库反向生成 DbContext 和实体（Database First）
+dotnet ef dbcontext scaffold "Host=localhost;Database=myapp;Username=postgres;Password=postgres" \
+    Npgsql.EntityFrameworkCore.PostgreSQL \
+    --context ApplicationDbContext \
+    --output-dir Models/Entities \
+    --context-dir Data`}
         language="bash"
         title="dotnet ef 迁移命令"
       />

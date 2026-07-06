@@ -38,14 +38,17 @@ export const EngineeringDeployLesson = ({
         code={`// Program.cs
 builder.Services.AddRateLimiter(rateLimiterOptions =>
 {
-    // 全局默认：每 IP 每秒 10 请求
-    rateLimiterOptions.AddFixedWindowLimiter("default", options =>
-    {
-        options.Window = TimeSpan.FromSeconds(1);
-        options.PermitLimit = 10;
-        options.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-        options.QueueLimit = 5;
-    });
+    // 默认策略：每 IP 每秒 10 请求。注意：命名策略需要绑定到端点才会生效。
+    rateLimiterOptions.AddPolicy("default", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown-ip",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromSeconds(1),
+                PermitLimit = 10,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 5
+            }));
 
     // 认证用户更高限额
     rateLimiterOptions.AddPolicy("authed", context =>
@@ -68,10 +71,19 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
             }));
 });
 
-app.UseRateLimiter();`}
+app.UseAuthentication();
+app.UseRateLimiter();
+app.UseAuthorization();
+
+app.MapControllers().RequireRateLimiting("default");`}
         language="csharp"
         title="注册限流策略"
       />
+      <LessonQuote>
+        <code>AddPolicy("default", ...)</code> 只是注册命名策略，不会自动成为全局默认。
+        Controller 项目可以在 <code>MapControllers()</code> 后用 <code>RequireRateLimiting("default")</code>{" "}
+        明确绑定；登录接口再用 <code>[EnableRateLimiting("login")]</code> 覆盖为更严格策略。
+      </LessonQuote>
       <p>
         在端点上用 <code>[EnableRateLimiting]</code> 指定要应用的策略：
       </p>
@@ -100,7 +112,7 @@ public async Task<IActionResult> Login(LoginDto dto) { ... }`}
         code={`FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
 EXPOSE 8080
-EXPOSE 8081  # Kestrel
+EXPOSE 8081
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
@@ -175,7 +187,7 @@ dotnet publish -c Release -r linux-x64 \\
         code={`# 普通发布（非 AOT）
 dotnet publish MyApp.Api/MyApp.Api.csproj -c Release -o ./publish
 
-# 发布 + 自包含（不含 .NET 运行时）
+# 发布 + 自包含（发布产物包含 .NET 运行时，不要求目标机器预装 runtime）
 dotnet publish -c Release -r linux-x64 --self-contained -o ./publish`}
         language="bash"
         title="普通发布与自包含发布"
@@ -247,14 +259,17 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRateLimiter(rateLimiterOptions =>
 {
-    // 全局默认：每 IP 每秒 10 请求
-    rateLimiterOptions.AddFixedWindowLimiter("default", options =>
-    {
-        options.Window = TimeSpan.FromSeconds(1);
-        options.PermitLimit = 10;
-        options.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-        options.QueueLimit = 5;
-    });
+    // 默认策略：每 IP 每秒 10 请求。命名策略需要绑定到端点才会生效。
+    rateLimiterOptions.AddPolicy("default", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown-ip",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromSeconds(1),
+                PermitLimit = 10,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 5
+            }));
 
     // 认证用户更高限额
     rateLimiterOptions.AddPolicy("authed", context =>
@@ -279,11 +294,11 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
 
 var app = builder.Build();
 
-app.UseRateLimiter();  // 在其他中间件之前
 app.UseAuthentication();
+app.UseRateLimiter();  // 依赖用户身份的限流策略要放在认证之后
 app.UseAuthorization();
 
-app.MapControllers();
+app.MapControllers().RequireRateLimiting("default");
 app.Run();`}
           language="csharp"
           title="Program.cs"
@@ -304,7 +319,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
-    // 不加特性时使用全局默认策略
+    // MapControllers().RequireRateLimiting("default") 会应用默认策略
     public async Task<IActionResult> Register(RegisterDto dto)
     {
         // 注册逻辑
@@ -319,7 +334,7 @@ public class AuthController : ControllerBase
         <ul>
           <li>使用 Postman 或 curl 快速发送多次登录请求，确认超过限额后返回 429 状态码</li>
           <li>检查响应头中是否包含 <code>Retry-After</code></li>
-          <li>确认其他端点使用的是默认策略</li>
+          <li>确认其他 Controller 端点通过 <code>RequireRateLimiting("default")</code> 使用默认策略</li>
         </ul>
 
         <h4>参考答案</h4>
@@ -427,7 +442,7 @@ curl http://localhost:8080/health
 docker logs myapp-container
 
 # 进入容器检查（确认无 SDK）
-docker exec -it myapp-container bash
+docker exec -it myapp-container sh
 ls /usr/share/dotnet  # 应该只有运行时，没有 sdk 目录
 
 # 停止并删除容器

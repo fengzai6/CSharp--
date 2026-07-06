@@ -31,7 +31,7 @@ export const courseModules = [
     order: "00",
     title: "环境准备与项目骨架",
     duration: "1-2 天",
-    sourcePath: "docs/00-环境准备与项目骨架.md",
+    sourcePath: "src/lessons/setup",
     goal: "能创建、运行、调试一个最小 .NET 项目。",
     teacherGuide: {
       teacherNotes: [
@@ -75,7 +75,7 @@ export const courseModules = [
     order: "01",
     title: "C# 语言核心",
     duration: "2-3 周",
-    sourcePath: "docs/01-CSharp语言核心.md",
+    sourcePath: "src/lessons/csharp-core",
     goal: "能用 C# 写干净的业务逻辑代码。",
     teacherGuide: {
       teacherNotes: [
@@ -115,7 +115,7 @@ export const courseModules = [
     order: "02",
     title: "ASP.NET Core 框架",
     duration: "3-4 周",
-    sourcePath: "docs/02-ASPNET-Core框架.md",
+    sourcePath: "src/lessons/aspnet-core",
     goal: "能独立搭建 REST API 项目。",
     teacherGuide: {
       teacherNotes: ["先理解请求从 Middleware 到 Controller 的路径。", "Controller 和 Minimal API 都要了解，但一开始不要混用。"],
@@ -137,7 +137,7 @@ export const courseModules = [
     order: "03",
     title: "EF Core 数据库",
     duration: "2-3 周",
-    sourcePath: "docs/03-EF-Core数据库.md",
+    sourcePath: "src/lessons/ef-core",
     goal: "能用 EF Core 建模复杂关系并处理事务。",
     teacherGuide: {
       teacherNotes: ["DbContext 是工作单元，不只是 Repository 替代品。", "只读查询和修改实体的查询策略要分开。"],
@@ -155,7 +155,7 @@ export const courseModules = [
     order: "04",
     title: "认证授权",
     duration: "1-2 周",
-    sourcePath: "docs/04-认证授权.md",
+    sourcePath: "src/lessons/auth",
     goal: "能实现 JWT 登录、刷新令牌、RBAC 和策略授权。",
     teacherGuide: {
       teacherNotes: ["认证授权不要为了快而牺牲安全习惯。", "权限判断尽量放到 Policy/Handler，而不是堆在 Controller。"],
@@ -172,12 +172,12 @@ export const courseModules = [
     order: "05",
     title: "SignalR 实时通信",
     duration: "1 周",
-    sourcePath: "docs/05-SignalR实时通信.md",
+    sourcePath: "src/lessons/signalr",
     goal: "能用 SignalR 实现房间、点对点消息、广播。",
     teacherGuide: {
       teacherNotes: ["SignalR 与 Socket.IO 不兼容，前端必须使用 SignalR 客户端。", "Groups 是连接级分组，业务成员关系仍要落库。"],
       commonPitfalls: ["用 Socket.IO 客户端连接 SignalR。", "用静态字典当多实例全局在线表。", "自动重连后忘记重新加入房间。"],
-      acceptanceQuestions: ["Clients.Caller、Clients.Group、Clients.Users 分别发送给谁？", "Groups 和数据库群组成员关系有什么区别？", "WebSocket 查询参数传 JWT 有什么安全注意事项？"],
+      acceptanceQuestions: ["Clients.Caller、Clients.Group、Clients.User 分别发送给谁？", "Groups 和数据库群组成员关系有什么区别？", "WebSocket 查询参数传 JWT 有什么安全注意事项？"],
     },
     sections: [
       { id: "signalr-hub", title: "Hub、Groups 与消息发送", objective: "搭建最小 Hub，并实现房间消息。", component: SignalrHubLesson },
@@ -189,7 +189,7 @@ export const courseModules = [
     order: "06",
     title: "工程化与进阶",
     duration: "持续",
-    sourcePath: "docs/06-工程化与进阶.md",
+    sourcePath: "src/lessons/engineering",
     goal: "建立完整的 .NET 工程化体系。",
     teacherGuide: {
       teacherNotes: ["工程化是可维护性的底线，不是最后装饰。", "先做测试、日志、健康检查，再逐步加缓存、限流、Docker 和 AOT。"],

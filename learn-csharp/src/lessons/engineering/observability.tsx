@@ -323,6 +323,49 @@ app.MapHealthChecks("/health/live", ...);    // 存活检查（最简单）`}
         title="健康检查响应"
       />
 
+      <h3>HTTP 客户端</h3>
+      <p>
+        调外部服务不要手动 <code>new HttpClient()</code>。ASP.NET Core 推荐用{" "}
+        <code>IHttpClientFactory</code> 或 typed client 统一管理连接池、超时、基础地址和默认请求头。
+      </p>
+      <LessonCode
+        code={`builder.Services.AddHttpClient<IProfileClient, ProfileClient>(client =>
+{
+    client.BaseAddress = new Uri("https://profile.example.com");
+    client.Timeout = TimeSpan.FromSeconds(5);
+});
+
+public interface IProfileClient
+{
+    Task<UserProfile?> GetProfileAsync(string userId, CancellationToken cancellationToken);
+}
+
+public class ProfileClient : IProfileClient
+{
+    private readonly HttpClient _httpClient;
+
+    public ProfileClient(HttpClient httpClient)
+    {
+        _httpClient = httpClient;
+    }
+
+    public async Task<UserProfile?> GetProfileAsync(
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        return await _httpClient.GetFromJsonAsync<UserProfile>(
+            $"/api/profiles/{userId}",
+            cancellationToken);
+    }
+}`}
+        language="csharp"
+        title="Typed HttpClient"
+      />
+      <LessonQuote>
+        对外部依赖的重试、超时、熔断要按接口重要性配置，不要无脑重试所有 POST 请求。幂等 GET
+        更适合重试；创建订单、扣款这类操作要先明确幂等键。
+      </LessonQuote>
+
       <h3>性能优化</h3>
       <h4>避免 N+1 查询</h4>
       <LessonCode
@@ -369,13 +412,13 @@ public async Task<User?> GetByIdAsync(string id)
     return await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
 }
 
-// ✅ 正确：CPU 绑定用 Task.Run
-public async Task<UserDto> GetWithSummaryAsync(string id)
+// 短时间 CPU 计算可临时 Task.Run；长任务应放到后台队列或 Worker
+public async Task<UserDto?> GetWithSummaryAsync(string id)
 {
     var user = await GetByIdAsync(id);
     if (user == null) return null;
 
-    // 如果计算量大，放线程池
+    // 如果计算很重，不要长期占用请求线程池，应改为后台任务
     var summary = await Task.Run(() => HeavyCalculation(user));
 
     return new UserDto { User = user, Summary = summary };

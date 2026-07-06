@@ -59,7 +59,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             OnMessageReceived = context =>
             {
                 // SignalR 的 access_token 在查询参数中
-                var accessToken = context.Query["access_token"];
+                var accessToken = context.Request.Query["access_token"];
                 var path = context.HttpContext.Request.Path;
 
                 if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chat"))

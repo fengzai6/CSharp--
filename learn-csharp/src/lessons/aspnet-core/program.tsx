@@ -237,6 +237,31 @@ app.UseMiddleware<RequestTimeMiddleware>();`}
         title="ExceptionMiddleware"
       />
 
+      <h4>ProblemDetails：标准错误响应</h4>
+      <p>
+        新项目优先用 <code>ProblemDetails</code> 表达错误，它是 ASP.NET Core 对 RFC 7807
+        的内置支持，比自己约定 <code>{`{ code, message }`}</code> 更容易被 OpenAPI、前端和监控工具理解。
+      </p>
+      <LessonCode
+        code={`builder.Services.AddProblemDetails();
+
+var app = builder.Build();
+
+app.UseExceptionHandler();
+app.UseStatusCodePages();
+
+[HttpGet("{id}")]
+public async Task<ActionResult<UserDto>> GetById(string id)
+{
+    var user = await _userService.GetByIdAsync(id);
+    return user is null
+        ? Problem(statusCode: 404, title: "用户不存在")
+        : Ok(user);
+}`}
+        language="csharp"
+        title="ProblemDetails"
+      />
+
       <h4>统一响应格式中间件</h4>
       <p>
         对应 NestJS 的 <code>PostResponseInterceptor</code>，通过替换{" "}
@@ -355,6 +380,15 @@ public class JwtSettings
         <code>ValidateOnStart()</code>{" "}
         可以在应用启动时立即发现配置错误，而不是在运行时才发现。
       </LessonQuote>
+
+      <LessonTable
+        headers={["选项类型", "适用场景"]}
+        rows={[
+          ["IOptions<T>", "配置启动后基本不变，单例读取"],
+          ["IOptionsSnapshot<T>", "每个请求重新取快照，适合 Scoped 服务"],
+          ["IOptionsMonitor<T>", "需要监听配置变化或在 Singleton 中读取最新值"],
+        ]}
+      />
 
       <h4>环境配置</h4>
       <p>

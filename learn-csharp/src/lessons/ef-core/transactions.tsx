@@ -19,10 +19,10 @@ export const EfTransactionsLesson = ({
     <LessonShell>
       <h3>本章你要掌握什么</h3>
       <p>
-        学完本节后，你应该能用 EF Core 写事务、悲观锁、软删除和批量操作，
+        学完本节后，你应该能用 EF Core 写事务、悲观锁、乐观并发、软删除和批量操作，
         知道什么时候用 <code>ExecuteUpdateAsync()</code> /{" "}
         <code>ExecuteDeleteAsync()</code> 替代"循环逐条 SaveChanges"，
-        并能创建和应用迁移。
+        并能创建迁移、生成生产迁移脚本。
       </p>
 
       <TeacherTask title="老师提示">
@@ -148,6 +148,56 @@ export const EfTransactionsLesson = ({
         language="csharp"
         title="悲观锁"
       />
+
+      <h3>乐观并发</h3>
+      <p>
+        冲突不频繁时，优先用乐观并发：读取时带上版本字段，保存时 EF Core
+        会检查版本是否仍匹配。如果中途被别人改过，<code>SaveChangesAsync()</code>{" "}
+        会抛出 <code>DbUpdateConcurrencyException</code>。
+      </p>
+      <LessonCode
+        code={`// SQL Server 常用 rowversion
+public class Group
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+
+    [Timestamp]
+    public byte[] RowVersion { get; set; } = [];
+}
+
+// PostgreSQL 可使用 xmin 作为并发 token
+public class GroupConfiguration : IEntityTypeConfiguration<Group>
+{
+    public void Configure(EntityTypeBuilder<Group> builder)
+    {
+        builder.UseXminAsConcurrencyToken();
+    }
+}
+
+public async Task RenameGroupAsync(string id, string name)
+{
+    var group = await _context.Groups.FirstOrDefaultAsync(g => g.Id == id);
+    if (group is null)
+        throw new NotFoundException("Group not found");
+
+    group.Name = name;
+
+    try
+    {
+        await _context.SaveChangesAsync();
+    }
+    catch (DbUpdateConcurrencyException)
+    {
+        throw new ConflictException("数据已被其他人修改，请刷新后重试");
+    }
+}`}
+        language="csharp"
+        title="乐观并发控制"
+      />
+      <LessonQuote>
+        选择规则：冲突频繁、必须串行的操作用悲观锁；大多数普通编辑场景用乐观并发，失败后提示用户刷新或重试。
+      </LessonQuote>
 
       <h3>软删除</h3>
       <p>
@@ -280,6 +330,22 @@ dotnet ef database update AddUsersAndRolesTables  # 回滚到指定迁移`}
         title="迁移命令"
       />
 
+      <h4>生产迁移脚本</h4>
+      <p>
+        本地学习可以直接 <code>database update</code>。生产环境更推荐生成 SQL
+        脚本，审查后由 CI/CD 或数据库迁移任务执行，避免应用启动时多个实例同时改库。
+      </p>
+      <LessonCode
+        code={`# 生成幂等迁移脚本，适合 CI/CD 多环境执行
+dotnet ef migrations script --idempotent -o ./artifacts/migrations.sql
+
+# 指定起止迁移生成脚本
+dotnet ef migrations script AddUsersAndRolesTables AddGroupTreeStructure \
+    -o ./artifacts/add-group-tree.sql`}
+        language="bash"
+        title="生产迁移脚本"
+      />
+
       <h3>常见误区</h3>
       <ul>
         <li>在循环里逐条 <code>SaveChangesAsync()</code>，每次往返一次数据库。</li>
@@ -303,6 +369,8 @@ dotnet ef database update AddUsersAndRolesTables  # 回滚到指定迁移`}
       <ul>
         <li><code>ExecuteUpdateAsync()</code> 和加载实体后修改有什么区别？</li>
         <li>悲观锁在 EF Core 里怎么实现？对应 TypeORM 的什么写法？</li>
+        <li>乐观并发和悲观锁分别适合什么场景？</li>
+        <li>生产环境为什么更推荐先生成迁移脚本再执行？</li>
         <li>软删除用全局过滤器时有哪些边界情况？</li>
       </ul>
 

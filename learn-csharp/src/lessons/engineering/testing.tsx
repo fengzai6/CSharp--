@@ -252,24 +252,19 @@ dotnet add package Testcontainers.PostgreSQL`}
       <LessonCode
         code={`using Testcontainers.PostgreSql;
 
-public class TestPostgreSqlContainer : PostgreSqlContainer
-{
-    public TestPostgreSqlContainer() : base()
-    {
-        // Testcontainers 自动管理容器生命周期
-    }
-}
-
 public class UsersControllerIntegrationTests : IAsyncLifetime
 {
-    private readonly TestPostgreSqlContainer _postgres;
-    private readonly HttpClient _client;
+    private readonly PostgreSqlContainer _postgres;
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
 
     public UsersControllerIntegrationTests()
     {
-        _postgres = new TestPostgreSqlContainer()
+        _postgres = new PostgreSqlBuilder()
             .WithDatabase("testdb")
-            .WithDatabasePassword("postgres");
+            .WithUsername("postgres")
+            .WithPassword("postgres")
+            .Build();
     }
 
     public async Task InitializeAsync()
@@ -277,16 +272,21 @@ public class UsersControllerIntegrationTests : IAsyncLifetime
         await _postgres.StartAsync();
 
         // 用真实数据库连接字符串创建 WebApplicationFactory
-        var factory = new WebApplicationFactory<Program>()
+        _factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseSetting("Database:ConnectionString",
                     _postgres.GetConnectionString());
             });
-        _client = factory.CreateClient();
+        _client = _factory.CreateClient();
     }
 
-    public Task DisposeAsync() => _postgres.StopAsync();
+    public async Task DisposeAsync()
+    {
+        _client.Dispose();
+        _factory.Dispose();
+        await _postgres.StopAsync();
+    }
 
     [Fact]
     public async Task CreateUser_ReturnsCreated()
