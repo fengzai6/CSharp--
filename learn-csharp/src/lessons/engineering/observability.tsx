@@ -1,4 +1,5 @@
 import {
+  LessonCheckpoint,
   LessonCode,
   LessonQuote,
   LessonShell,
@@ -6,7 +7,13 @@ import {
   TeacherTask,
 } from "@/components/lesson-ui";
 
-export const EngineeringObservabilityLesson = () => {
+export const EngineeringObservabilityLesson = ({
+  completedChecklistIds,
+  onToggleChecklistItem,
+}: {
+  completedChecklistIds: string[];
+  onToggleChecklistItem: (checklistItemId: string) => void;
+}) => {
   return (
     <LessonShell>
       <h3>本章你要掌握什么</h3>
@@ -387,6 +394,18 @@ public async Task<User?> GetByIdAsync(string id)
 }`}
         language="csharp"
         title="异步正确与错误写法"
+      />
+
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已能配置结构化日志、缓存、健康检查，并能识别只读查询和异步阻塞的性能问题。
+          </p>
+        }
+        id="engineering-observability-main"
+        title="完成可观测性与性能主线"
+        onToggleChecklistItem={onToggleChecklistItem}
       />
 
       <LessonStep

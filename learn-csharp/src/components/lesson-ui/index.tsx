@@ -1,4 +1,5 @@
 import {
+  CheckCircleFilled,
   CheckCircleOutlined,
   CheckSquareOutlined,
   RightCircleOutlined,
@@ -22,6 +23,14 @@ interface ILessonChecklistProps {
   completedChecklistIds: string[];
   id: string;
   items: string[];
+  onToggleChecklistItem: (checklistItemId: string) => void;
+  title: string;
+}
+
+interface ILessonCheckpointProps {
+  completedChecklistIds: string[];
+  description: ReactNode;
+  id: string;
   onToggleChecklistItem: (checklistItemId: string) => void;
   title: string;
 }
@@ -109,11 +118,44 @@ export const LessonChecklist = ({
   </section>
 );
 
+export const LessonCheckpoint = ({
+  completedChecklistIds,
+  description,
+  id,
+  onToggleChecklistItem,
+  title,
+}: ILessonCheckpointProps) => {
+  const checkpointId = `lesson-checkpoint-${id}`;
+  const completed = completedChecklistIds.includes(checkpointId);
+
+  return (
+    <section className="rounded-lg border border-teal-200 bg-teal-50 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-normal text-teal-700">
+            正文任务确认
+          </p>
+          <h4 className="text-base font-semibold text-teal-950">{title}</h4>
+          <div className="mt-2 text-sm leading-6 text-teal-950">{description}</div>
+        </div>
+        <Button
+          className="min-h-11 shrink-0"
+          icon={completed ? <CheckCircleFilled /> : <CheckCircleOutlined />}
+          type={completed ? "primary" : "default"}
+          onClick={() => onToggleChecklistItem(checkpointId)}
+        >
+          {completed ? "已完成" : "我已完成"}
+        </Button>
+      </div>
+    </section>
+  );
+};
+
 export const LessonCode = CodeCopy;
 
 export { LessonCodeCompare } from "@/components/lesson-code-compare";
 
-export const LessonStep = ({ title, steps, conclusion, defaultCollapsed = false, children }: ILessonStepProps) => (
+export const LessonStep = ({ title, steps, conclusion, defaultCollapsed = true, children }: ILessonStepProps) => (
   <section className="rounded-lg border border-teal-200 bg-teal-50 p-5">
     <Collapse
       bordered={false}
@@ -130,6 +172,9 @@ export const LessonStep = ({ title, steps, conclusion, defaultCollapsed = false,
           ),
           children: (
             <div className="space-y-4">
+              <p className="rounded-md bg-white px-3 py-2 text-sm leading-6 text-teal-900">
+                这部分是独立实战练习，只在需要完成额外项目交付时保留；正文里的主线任务不在这里重复。
+              </p>
               {children || steps?.map((step, index) => (
                 <div
                   key={`${step.title}-${index}`}

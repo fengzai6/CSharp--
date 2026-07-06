@@ -1,4 +1,5 @@
 import {
+  LessonCheckpoint,
   LessonCode,
   LessonQuote,
   LessonShell,
@@ -7,7 +8,13 @@ import {
   TeacherTask,
 } from "@/components/lesson-ui";
 
-export const EfTransactionsLesson = () => {
+export const EfTransactionsLesson = ({
+  completedChecklistIds,
+  onToggleChecklistItem,
+}: {
+  completedChecklistIds: string[];
+  onToggleChecklistItem: (checklistItemId: string) => void;
+}) => {
   return (
     <LessonShell>
       <h3>本章你要掌握什么</h3>
@@ -200,7 +207,7 @@ await _context.SaveChangesAsync();
         title="批量操作"
       />
 
-      <TeacherTask title="实战价值">
+      <TeacherTask title="应用价值">
         <p>
           像 <code>GroupsService</code> 的 <code>addGroupMembers</code>{" "}
           批量添加成员这种场景，用批量操作可以大幅减少数据库往返次数。
@@ -279,6 +286,18 @@ dotnet ef database update AddUsersAndRolesTables  # 回滚到指定迁移`}
         <li>需要原子性的多步写入没有放进同一个事务。</li>
         <li>用了全局软删除过滤器，却忘记后台管理或恢复场景要 <code>IgnoreQueryFilters()</code>。</li>
       </ul>
+
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已能把多步写入放进事务，理解批量更新与 Change Tracker 的边界，并会生成/回滚迁移。
+          </p>
+        }
+        id="ef-transactions-main"
+        title="完成事务、批量操作与迁移主线"
+        onToggleChecklistItem={onToggleChecklistItem}
+      />
 
       <h3>阶段验收问题</h3>
       <ul>

@@ -1,13 +1,19 @@
 import {
+  LessonCheckpoint,
   LessonCode,
   LessonQuote,
   LessonShell,
-  LessonStep,
   LessonTable,
   TeacherTask,
 } from "@/components/lesson-ui";
 
-export const AuthPasswordJwtLesson = () => {
+export const AuthPasswordJwtLesson = ({
+  completedChecklistIds,
+  onToggleChecklistItem,
+}: {
+  completedChecklistIds: string[];
+  onToggleChecklistItem: (checklistItemId: string) => void;
+}) => {
   return (
     <LessonShell>
       <h3>本节你要掌握什么</h3>
@@ -241,197 +247,16 @@ builder.Services.AddAuthorization();`}
         错误信息不要区分"邮箱不存在"和"密码错误"，避免泄露账号是否存在。
       </LessonQuote>
 
-      <LessonStep
-        title="实战：密码哈希与 JWT 认证"
-        steps={[
-          {
-            title: "实现 PasswordService",
-            content: (
-              <p>
-                实现密码哈希和校验服务，使用 BCrypt 或 PBKDF2 算法。
-              </p>
-            ),
-            code: `using System.Security.Cryptography;
-
-public class PasswordService
-{
-    private const int SaltSize = 16;
-    private const int HashSize = 32;
-    private const int Iterations = 100000;
-
-    public string HashPassword(string password)
-    {
-        using var rng = RandomNumberGenerator.Create();
-        var salt = new byte[SaltSize];
-        rng.GetBytes(salt);
-
-        using var pbkdf2 = new Rfc2898DeriveBytes(password, salt, Iterations, HashAlgorithmName.SHA256);
-        var hash = pbkdf2.GetBytes(HashSize);
-
-        var combined = new byte[SaltSize + HashSize];
-        Buffer.BlockCopy(salt, 0, combined, 0, SaltSize);
-        Buffer.BlockCopy(hash, 0, combined, SaltSize, HashSize);
-
-        return Convert.ToBase64String(combined);
-    }
-
-    public bool VerifyPassword(string password, string hashedPassword)
-    {
-        var combined = Convert.FromBase64String(hashedPassword);
-        var salt = new byte[SaltSize];
-        Buffer.BlockCopy(combined, 0, salt, 0, SaltSize);
-
-        using var pbkdf2 = new Rfc2898DeriveBytes(password, salt, Iterations, HashAlgorithmName.SHA256);
-        var hash = pbkdf2.GetBytes(HashSize);
-
-        for (int i = 0; i < HashSize; i++)
-        {
-            if (combined[SaltSize + i] != hash[i])
-                return false;
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已能实现密码哈希校验、JWT Bearer 配置和登录签发 Access Token 的主流程。
+          </p>
         }
-        return true;
-    }
-}`,
-            codeLanguage: "csharp",
-            codeTitle: "PasswordService",
-            checkpoints: [
-              "用 PBKDF2 算法哈希密码（100000 次迭代）",
-              "随机生成 salt 并存储在哈希值中",
-              "校验时提取 salt 并重新计算哈希比对",
-            ],
-            reference:
-              "不要用 MD5 或 SHA1，它们太快，容易被暴力破解。PBKDF2、BCrypt、Argon2 都是合适的选择。",
-          },
-          {
-            title: "实现登录接口返回 JWT",
-            content: (
-              <p>
-                实现登录接口，验证用户名密码后，生成 access token 和 refresh token 返回。
-              </p>
-            ),
-            code: `public class TokenService
-{
-    private readonly string _secretKey;
-    private readonly int _expiresInMinutes;
-
-    public string CreateAccessToken(User user, List<string> roles, List<string> permissions)
-    {
-        var claims = new List<Claim>
-        {
-            new Claim(ClaimTypes.NameIdentifier, user.Id),
-            new Claim(ClaimTypes.Email, user.Email)
-        };
-
-        claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
-        claims.AddRange(permissions.Select(p => new Claim("permission", p)));
-
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secretKey));
-        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-        var token = new JwtSecurityToken(
-            claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(_expiresInMinutes),
-            signingCredentials: creds
-        );
-
-        return new JwtSecurityTokenHandler().WriteToken(token);
-    }
-}
-
-[HttpPost("login")]
-public async Task<IActionResult> Login([FromBody] LoginDto dto)
-{
-    var user = await _userService.GetByEmailAsync(dto.Email);
-    if (user == null || !_passwordService.VerifyPassword(dto.Password, user.PasswordHash))
-        return Unauthorized(new { message = "邮箱或密码错误" });
-
-    var roles = await _userService.GetUserRolesAsync(user.Id);
-    var permissions = await _userService.GetUserPermissionsAsync(user.Id);
-
-    var accessToken = _tokenService.CreateAccessToken(user, roles, permissions);
-    var refreshToken = await _tokenService.CreateRefreshTokenAsync(user.Id);
-
-    return Ok(new { accessToken, refreshToken });
-}`,
-            codeLanguage: "csharp",
-            codeTitle: "登录接口",
-            checkpoints: [
-              "验证用户名密码",
-              "生成包含 user id、email、roles、permissions 的 JWT",
-              "同时返回 access token 和 refresh token",
-            ],
-            reference:
-              "错误信息不要区分用户不存在和密码错误，统一返回邮箱或密码错误，避免泄露账号是否存在。",
-          },
-          {
-            title: "配置 JWT 认证中间件",
-            content: (
-              <p>
-                在 <code>Program.cs</code> 中配置 JWT 认证，并确保中间件顺序正确。
-              </p>
-            ),
-            code: `// Program.cs
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]!)
-            ),
-            ValidateIssuer = false,
-            ValidateAudience = false,
-            ClockSkew = TimeSpan.Zero
-        };
-    });
-
-builder.Services.AddAuthorization();
-
-var app = builder.Build();
-
-// 中间件顺序很重要！
-app.UseAuthentication();  // 先认证
-app.UseAuthorization();   // 再授权
-app.MapControllers();`,
-            codeLanguage: "csharp",
-            codeTitle: "JWT 认证配置",
-            checkpoints: [
-              "AddAuthentication 配置 JWT Bearer 认证",
-              "配置 TokenValidationParameters（密钥、过期等）",
-              "UseAuthentication 必须在 UseAuthorization 前面",
-            ],
-            reference:
-              "如果中间件顺序错了（UseAuthorization 在 UseAuthentication 前面），会导致所有需要认证的接口都返回 401。",
-          },
-        ]}
-        conclusion={
-          <div className="space-y-2">
-            <p className="font-semibold text-teal-900">
-              ✅ 恭喜！你已经实现了完整的密码认证和 JWT 机制。
-            </p>
-            <p>
-              <strong>💡 要点回顾：</strong>
-            </p>
-            <ul className="list-inside list-disc space-y-1 text-sm">
-              <li>
-                用 PBKDF2/BCrypt 哈希密码，不要用 MD5/SHA1
-              </li>
-              <li>
-                JWT 包含 user id、roles、permissions 等 claims
-              </li>
-              <li>
-                UseAuthentication 必须在 UseAuthorization 前面
-              </li>
-              <li>
-                登录错误信息不要区分"用户不存在"和"密码错误"
-              </li>
-            </ul>
-            <p className="text-sm">
-              <strong>🎯 验收标准：</strong>能实现密码哈希、JWT 生成、认证配置。
-            </p>
-          </div>
-        }
+        id="auth-password-jwt-main"
+        title="完成密码登录与 JWT 主线"
+        onToggleChecklistItem={onToggleChecklistItem}
       />
     </LessonShell>
   );

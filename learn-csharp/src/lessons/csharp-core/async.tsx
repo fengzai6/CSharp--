@@ -1,13 +1,19 @@
 import {
+  LessonCheckpoint,
   LessonCode,
   LessonQuote,
   LessonShell,
-  LessonStep,
   LessonTable,
   TeacherTask,
 } from "@/components/lesson-ui";
 
-export const CsharpAsyncLesson = () => {
+export const CsharpAsyncLesson = ({
+  completedChecklistIds,
+  onToggleChecklistItem,
+}: {
+  completedChecklistIds: string[];
+  onToggleChecklistItem: (checklistItemId: string) => void;
+}) => {
   return (
     <LessonShell>
       <h3>本节你要掌握什么</h3>
@@ -40,6 +46,19 @@ public async Task<List<User>> GetUsersAsync(string[] ids)
         title="异步基础模式"
       />
 
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已能写出返回 <code>Task&lt;T&gt;</code> 的异步方法，并用 <code>Task.WhenAll</code>
+            表达并行等待。
+          </p>
+        }
+        id="csharp-async-task-when-all"
+        title="掌握 Task 异步基础"
+        onToggleChecklistItem={onToggleChecklistItem}
+      />
+
       <h4>与 JS/TS 的核心差异</h4>
       <LessonTable
         headers={["", "JS / TS", "C#"]}
@@ -63,6 +82,19 @@ public async Task<int> ComputeExpensiveAsync(int n)
 }`}
         language="csharp"
         title="CPU 绑定操作的处理"
+      />
+
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已能区分 I/O 异步和 CPU 计算，并知道 Web API 代码里不能用
+            <code>.Result</code> / <code>.Wait()</code> 阻塞异步链路。
+          </p>
+        }
+        id="csharp-async-no-blocking"
+        title="避免阻塞异步"
+        onToggleChecklistItem={onToggleChecklistItem}
       />
 
       <TeacherTask title="Async/Await 黄金法则">
@@ -137,133 +169,6 @@ log("hello");`}
           为什么 Web API 代码里要避免 <code>.Result</code>？
         </li>
       </ul>
-
-      <LessonStep
-        title="实战：async/await 与 Task"
-        steps={[
-          {
-            title: "实现并行 API 调用",
-            content: (
-              <p>
-                创建一个异步方法，并行调用 3 个 API，用 Task.WhenAll 等待所有结果返回后汇总。
-              </p>
-            ),
-            code: `public async Task<List<User>> GetUsersFromMultipleSourcesAsync()
-{
-    // 创建 3 个任务（立即开始执行）
-    var task1 = httpClient.GetFromJsonAsync<List<User>>("https://api1.com/users");
-    var task2 = httpClient.GetFromJsonAsync<List<User>>("https://api2.com/users");
-    var task3 = httpClient.GetFromJsonAsync<List<User>>("https://api3.com/users");
-
-    // 等待所有任务完成
-    var results = await Task.WhenAll(task1, task2, task3);
-
-    // 汇总结果
-    return results.SelectMany(users => users).ToList();
-}`,
-            codeLanguage: "csharp",
-            codeTitle: "并行 API 调用",
-            checkpoints: [
-              "3 个任务同时启动（不要 await 每一个，那会变成串行）",
-              "Task.WhenAll 等待所有任务完成",
-              "用 SelectMany 展平结果",
-            ],
-            reference:
-              "常见错误：await task1; await task2; await task3; 这是串行执行，总耗时是三者之和。正确做法是先启动所有任务，再 await Task.WhenAll，总耗时是最慢的那个。",
-          },
-          {
-            title: "用委托替代回调函数",
-            content: (
-              <p>
-                用 Func&lt;T, R&gt; 和 Action&lt;T&gt; 定义委托，实现类似 TS 回调函数的机制。
-              </p>
-            ),
-            code: `// Func<T, R>：有返回值的委托
-Func<int, int, int> add = (a, b) => a + b;
-Console.WriteLine(add(1, 2));  // 3
-
-// Action<T>：无返回值的委托
-Action<string> log = (message) => Console.WriteLine(message);
-log("Hello");
-
-// 高阶函数示例
-public void ProcessUsers(List<User> users, Func<User, bool> predicate)
-{
-    var filtered = users.Where(predicate).ToList();
-    Console.WriteLine($"Found {filtered.Count} users");
-}
-
-// 调用
-ProcessUsers(users, u => u.Age > 18);`,
-            codeLanguage: "csharp",
-            codeTitle: "委托（Func 和 Action）",
-            checkpoints: [
-              "Func<T, R> 有返回值（最后一个类型是返回值）",
-              "Action<T> 无返回值",
-              "可以作为参数传递（类似 TS 的回调）",
-            ],
-            reference:
-              "Func<int, int, int> 表示接受两个 int，返回一个 int。Action<string> 表示接受一个 string，无返回值。这是 C# 的一等函数支持。",
-          },
-          {
-            title: "重构阻塞式异步代码",
-            content: (
-              <p>
-                找出使用 .Result 或 .Wait() 的代码，改写为全程 await，避免死锁和线程阻塞。
-              </p>
-            ),
-            code: `// ❌ 错误写法（阻塞线程，可能死锁）
-public User GetUser(string id)
-{
-    var user = GetUserAsync(id).Result;  // 阻塞！
-    return user;
-}
-
-// ✅ 正确写法（全程异步）
-public async Task<User> GetUserAsync(string id)
-{
-    var user = await httpClient.GetFromJsonAsync<User>($"/users/{id}");
-    return user;
-}`,
-            codeLanguage: "csharp",
-            codeTitle: "避免阻塞异步",
-            checkpoints: [
-              "方法签名改为 async Task<T>",
-              "用 await 替代 .Result 或 .Wait()",
-              "调用方也要改成异步（async 传染性）",
-            ],
-            reference:
-              "在 Web API 中用 .Result 会阻塞线程池线程，导致吞吐量下降甚至死锁。ASP.NET Core 默认同步上下文已移除，但阻塞仍会浪费线程。始终用 await。",
-          },
-        ]}
-        conclusion={
-          <div className="space-y-2">
-            <p className="font-semibold text-teal-900">
-              ✅ 恭喜！你已经掌握了 C# 异步编程的核心模式。
-            </p>
-            <p>
-              <strong>💡 要点回顾：</strong>
-            </p>
-            <ul className="list-inside list-disc space-y-1 text-sm">
-              <li>
-                Task.WhenAll 实现并行等待，避免串行 await
-              </li>
-              <li>
-                Func&lt;T, R&gt; 和 Action&lt;T&gt; 是 C# 的委托（类似 TS 回调）
-              </li>
-              <li>
-                避免 .Result 和 .Wait()，全程使用 await
-              </li>
-              <li>
-                async/await 是语法糖，底层是状态机（不是真正的线程）
-              </li>
-            </ul>
-            <p className="text-sm">
-              <strong>🎯 验收标准：</strong>能实现并行异步调用、用委托传递函数、避免阻塞异步。
-            </p>
-          </div>
-        }
-      />
     </LessonShell>
   );
 };

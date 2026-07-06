@@ -1,4 +1,5 @@
 import {
+  LessonCheckpoint,
   LessonCode,
   LessonQuote,
   LessonShell,
@@ -7,7 +8,13 @@ import {
   TeacherTask,
 } from "@/components/lesson-ui";
 
-export const EngineeringDeployLesson = () => {
+export const EngineeringDeployLesson = ({
+  completedChecklistIds,
+  onToggleChecklistItem,
+}: {
+  completedChecklistIds: string[];
+  onToggleChecklistItem: (checklistItemId: string) => void;
+}) => {
   return (
     <LessonShell>
       <h3>本章你要掌握什么</h3>
@@ -200,6 +207,18 @@ dotnet publish -c Release -r linux-x64 --self-contained -o ./publish`}
         <li>为什么 Docker 镜像标签要和项目 TargetFramework 保持一致？</li>
         <li>AOT 适合哪些场景，为什么 SignalR 初学阶段不适合作为 AOT 练习目标？</li>
       </ul>
+
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已能说明限流、Docker 多阶段构建、普通发布和 AOT 发布各自解决的问题与适用边界。
+          </p>
+        }
+        id="engineering-deploy-main"
+        title="完成部署与限流主线"
+        onToggleChecklistItem={onToggleChecklistItem}
+      />
 
       <h3>实战练习</h3>
 

@@ -1,13 +1,19 @@
 import {
+  LessonCheckpoint,
   LessonCode,
   LessonQuote,
   LessonShell,
-  LessonStep,
   LessonTable,
   TeacherTask,
 } from "@/components/lesson-ui";
 
-export const EfDbContextLesson = () => {
+export const EfDbContextLesson = ({
+  completedChecklistIds,
+  onToggleChecklistItem,
+}: {
+  completedChecklistIds: string[];
+  onToggleChecklistItem: (checklistItemId: string) => void;
+}) => {
   return (
     <LessonShell>
       <h3>本章你要掌握什么</h3>
@@ -239,6 +245,19 @@ dotnet ef migrations add InitialCreate --context ApplicationDbContext`}
         <li>全局查询过滤器做了软删除，却忘记后台管理或恢复场景需要忽略过滤器。</li>
       </ul>
 
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已能创建 <code>ApplicationDbContext</code>、定义 <code>DbSet</code>、注册
+            DbContext，并跑通一次迁移命令。
+          </p>
+        }
+        id="ef-dbcontext-main"
+        title="完成 EF Core 基础接入"
+        onToggleChecklistItem={onToggleChecklistItem}
+      />
+
       <h3>阶段验收问题</h3>
       <ul>
         <li>DbContext 为什么通常注册为 Scoped？</li>
@@ -246,377 +265,12 @@ dotnet ef migrations add InitialCreate --context ApplicationDbContext`}
         <li>软删除用全局过滤器时有哪些边界情况？</li>
       </ul>
 
-      <TeacherTask title="Phase 2 练习">
+      <TeacherTask title="Phase 2 主线任务">
         <p>
           在复刻项目中完成 Phase 2：接入 EF Core + PostgreSQL，创建 DbContext 和
           Migration，跑通第一次 <code>dotnet ef database update</code>。
         </p>
       </TeacherTask>
-
-      <LessonStep
-        title="实战任务：搭建 EF Core + DbContext 基础架构"
-        steps={[
-          {
-            title: "创建 ApplicationDbContext 并定义 DbSet",
-            content: (
-              <div>
-                <p>安装 EF Core 包，创建 DbContext，定义 Users、Roles、Groups 等表。</p>
-              </div>
-            ),
-            code: `// 1. 安装 NuGet 包
-dotnet add package Microsoft.EntityFrameworkCore.SqlServer
-dotnet add package Microsoft.EntityFrameworkCore.Tools
-// 如果用 PostgreSQL
-dotnet add package Npgsql.EntityFrameworkCore.PostgreSQL
-
-// 2. 创建 Data/ApplicationDbContext.cs
-using Microsoft.EntityFrameworkCore;
-
-public class ApplicationDbContext : DbContext
-{
-    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
-        : base(options) { }
-
-    // 定义 DbSet — 每个对应一张表
-    public DbSet<User> Users => Set<User>();
-    public DbSet<Role> Roles => Set<Role>();
-    public DbSet<Group> Groups => Set<Group>();
-    public DbSet<UserRole> UserRoles => Set<UserRole>();
-    public DbSet<GroupMember> GroupMembers => Set<GroupMember>();
-
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        base.OnModelCreating(modelBuilder);
-        // 实体配置将在后续步骤添加
-    }
-}
-
-// 3. 在 Program.cs 中注册
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-    // 或 PostgreSQL: options.UseNpgsql(...)
-
-// 4. 在 appsettings.json 中配置连接字符串
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost;Database=LearnCSharp;Trusted_Connection=True;"
-  }
-}`,
-            codeLanguage: "csharp",
-            codeTitle: "ApplicationDbContext",
-            checkpoints: [
-              "EF Core 包已安装（SqlServer 或 PostgreSQL）",
-              "ApplicationDbContext 类已创建并继承 DbContext",
-              "已定义 Users、Roles、Groups、UserRoles、GroupMembers 五个 DbSet",
-              "Program.cs 中已用 AddDbContext 注册（Scoped 生命周期）",
-              "appsettings.json 中已配置数据库连接字符串",
-            ],
-            reference: `DbContext 自动注册为 Scoped 生命周期，意味着每个 HTTP 请求内共享一个实例，请求结束自动释放。不要在 Singleton 服务中注入 DbContext，会导致跨请求共享和线程安全问题。`,
-          },
-          {
-            title: "抽出 BaseEntity 基类，让 User 继承",
-            content: (
-              <div>
-                <p>创建一个基类统一管理 Id、CreatedAt、UpdatedAt 等公共字段。</p>
-              </div>
-            ),
-            code: `// Data/Entities/BaseEntity.cs
-public abstract class BaseEntity
-{
-    public string Id { get; set; } = Guid.NewGuid().ToString();
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime? UpdatedAt { get; set; }
-
-    public abstract void Touch(); // 抽象方法，子类实现更新逻辑
-}
-
-// Data/Entities/User.cs
-public class User : BaseEntity
-{
-    public string Username { get; set; } = string.Empty;
-    public string Email { get; set; } = string.Empty;
-    public string PasswordHash { get; set; } = string.Empty;
-    public string? Nickname { get; set; }
-    public string? Avatar { get; set; }
-    public bool IsActive { get; set; } = true;
-
-    // 导航属性
-    public List<UserRole> UserRoles { get; set; } = new();
-    public List<GroupMember> GroupMemberships { get; set; } = new();
-
-    public override void Touch()
-    {
-        UpdatedAt = DateTime.UtcNow;
-    }
-}
-
-// Data/Entities/Role.cs
-public class Role : BaseEntity
-{
-    public string Name { get; set; } = string.Empty;
-    public string? Description { get; set; }
-
-    public List<UserRole> UserRoles { get; set; } = new();
-
-    public override void Touch()
-    {
-        UpdatedAt = DateTime.UtcNow;
-    }
-}
-
-// Data/Entities/Group.cs
-public class Group : BaseEntity
-{
-    public string Name { get; set; } = string.Empty;
-    public string? Description { get; set; }
-    public bool IsActive { get; set; } = true;
-
-    public List<GroupMember> Members { get; set; } = new();
-
-    public override void Touch()
-    {
-        UpdatedAt = DateTime.UtcNow;
-    }
-}`,
-            codeLanguage: "csharp",
-            codeTitle: "BaseEntity 和实体类",
-            checkpoints: [
-              "BaseEntity 类包含 Id、CreatedAt、UpdatedAt",
-              "BaseEntity 定义了抽象方法 Touch()",
-              "User、Role、Group 都继承自 BaseEntity",
-              "User 包含 Username、Email、PasswordHash、IsActive",
-              "实体中使用导航属性表达关系（UserRoles、GroupMemberships）",
-              "所有实体都实现了 Touch() 方法",
-            ],
-            reference: `使用基类的好处：1) 减少重复代码；2) 统一审计字段；3) 可以在基类中添加通用方法。导航属性（如 UserRoles）用于表达关系，EF Core 会根据导航属性自动推断外键。`,
-          },
-          {
-            title: "在 OnModelCreating 中添加全局查询过滤器",
-            content: (
-              <div>
-                <p>为 User 实体添加 IsActive 的全局过滤器，实现软删除功能。</p>
-              </div>
-            ),
-            code: `// Data/ApplicationDbContext.cs
-protected override void OnModelCreating(ModelBuilder modelBuilder)
-{
-    base.OnModelCreating(modelBuilder);
-
-    // 为 User 添加全局查询过滤器（软删除）
-    modelBuilder.Entity<User>()
-        .HasQueryFilter(u => u.IsActive);
-
-    // 为 Group 添加全局查询过滤器
-    modelBuilder.Entity<Group>()
-        .HasQueryFilter(g => g.IsActive);
-
-    // 配置索引
-    modelBuilder.Entity<User>()
-        .HasIndex(u => u.Email)
-        .IsUnique();
-
-    modelBuilder.Entity<User>()
-        .HasIndex(u => u.Username)
-        .IsUnique();
-
-    // 配置字符串长度
-    modelBuilder.Entity<User>()
-        .Property(u => u.Username)
-        .HasMaxLength(50);
-
-    modelBuilder.Entity<User>()
-        .Property(u => u.Email)
-        .HasMaxLength(100);
-}
-
-// 使用时的效果
-// 默认查询会自动过滤掉 IsActive = false 的记录
-var activeUsers = await _context.Users.ToListAsync(); // 只返回 IsActive = true 的用户
-
-// 需要查询包括已停用的用户时，使用 IgnoreQueryFilters()
-var allUsers = await _context.Users
-    .IgnoreQueryFilters()
-    .ToListAsync(); // 返回所有用户，包括 IsActive = false`,
-            codeLanguage: "csharp",
-            codeTitle: "全局查询过滤器",
-            checkpoints: [
-              "OnModelCreating 中已为 User 添加 HasQueryFilter",
-              "过滤条件为 u => u.IsActive",
-              "同样为 Group 添加了过滤器",
-              "添加了 Email 和 Username 的唯一索引",
-              "配置了字符串字段的最大长度",
-              "理解 IgnoreQueryFilters() 的作用场景",
-            ],
-            reference: `全局查询过滤器在所有查询中自动生效，无需手动添加 Where 条件。但在恢复已删除记录、后台管理等场景，需要用 IgnoreQueryFilters() 暂时禁用过滤器。注意：过滤器不影响 Find()、Add()、Update()、Remove() 这些直接操作。`,
-          },
-          {
-            title: "创建迁移并应用到数据库",
-            content: (
-              <div>
-                <p>使用 EF Core 迁移工具生成数据库迁移脚本并应用。</p>
-              </div>
-            ),
-            code: `# 1. 创建初始迁移
-dotnet ef migrations add InitialCreate
-
-# 这会在项目中生成 Migrations/ 文件夹，包含：
-# - <timestamp>_InitialCreate.cs       (迁移定义)
-# - <timestamp>_InitialCreate.Designer.cs (元数据)
-# - ApplicationDbContextModelSnapshot.cs  (当前模型快照)
-
-# 2. 查看将要执行的 SQL
-dotnet ef migrations script
-
-# 3. 应用迁移到数据库
-dotnet ef database update
-
-# 4. 验证数据库
-# 连接到数据库，检查表是否创建成功：
-# - Users 表
-# - Roles 表
-# - Groups 表
-# - UserRoles 表
-# - GroupMembers 表
-# - __EFMigrationsHistory 表（迁移历史记录）
-
-# 5. 回滚迁移（如需要）
-dotnet ef database update 0  # 回滚所有迁移
-dotnet ef database update InitialCreate  # 回滚到指定迁移
-
-# 6. 删除迁移（未应用时）
-dotnet ef migrations remove`,
-            codeLanguage: "bash",
-            codeTitle: "EF Core 迁移命令",
-            checkpoints: [
-              "成功执行 dotnet ef migrations add InitialCreate",
-              "Migrations/ 文件夹已生成，包含迁移文件",
-              "成功执行 dotnet ef database update",
-              "数据库中已创建所有表",
-              "数据库中存在 __EFMigrationsHistory 表",
-              "理解 migrations script、update、remove 的区别",
-            ],
-            reference: `迁移文件记录了数据库结构的变化历史。每次修改实体后，运行 migrations add 生成新迁移，再用 database update 应用。__EFMigrationsHistory 表记录已应用的迁移，确保不会重复执行。`,
-          },
-          {
-            title: "打印 ChangeTracker 状态，观察实体追踪",
-            content: (
-              <div>
-                <p>编写测试代码，观察 EF Core 的变更追踪机制。</p>
-              </div>
-            ),
-            code: `// 创建一个测试端点或单元测试
-public class ChangeTrackerTestService
-{
-    private readonly ApplicationDbContext _context;
-
-    public ChangeTrackerTestService(ApplicationDbContext context)
-    {
-        _context = context;
-    }
-
-    public async Task DemoChangeTrackerAsync()
-    {
-        // 1. 新增实体 — 状态为 Added
-        var newUser = new User
-        {
-            Username = "testuser",
-            Email = "test@example.com",
-            PasswordHash = "hash123"
-        };
-        _context.Users.Add(newUser);
-        PrintTrackerState("添加新用户后");
-
-        // 2. 保存后状态变为 Unchanged
-        await _context.SaveChangesAsync();
-        PrintTrackerState("保存后");
-
-        // 3. 修改实体属性 — 状态变为 Modified
-        newUser.Username = "updateduser";
-        PrintTrackerState("修改用户名后");
-
-        // 4. 保存后再次变为 Unchanged
-        await _context.SaveChangesAsync();
-        PrintTrackerState("再次保存后");
-
-        // 5. 标记删除 — 状态变为 Deleted
-        _context.Users.Remove(newUser);
-        PrintTrackerState("标记删除后");
-
-        await _context.SaveChangesAsync();
-        PrintTrackerState("删除保存后");
-    }
-
-    private void PrintTrackerState(string stage)
-    {
-        Console.WriteLine($"\\n===== {stage} =====");
-        foreach (var entry in _context.ChangeTracker.Entries<User>())
-        {
-            Console.WriteLine($"Entity: {entry.Entity.Username}");
-            Console.WriteLine($"  State: {entry.State}");
-
-            if (entry.State == EntityState.Modified)
-            {
-                foreach (var prop in entry.Properties)
-                {
-                    if (prop.IsModified)
-                    {
-                        Console.WriteLine($"  Modified Property: {prop.Metadata.Name}");
-                        Console.WriteLine($"    Original: {prop.OriginalValue}");
-                        Console.WriteLine($"    Current: {prop.CurrentValue}");
-                    }
-                }
-            }
-        }
-    }
-}`,
-            codeLanguage: "csharp",
-            codeTitle: "ChangeTracker 追踪测试",
-            checkpoints: [
-              "创建了测试方法观察 ChangeTracker",
-              "理解 Added 状态（新增实体）",
-              "理解 Modified 状态（修改已追踪实体）",
-              "理解 Unchanged 状态（SaveChanges 后）",
-              "理解 Deleted 状态（调用 Remove 后）",
-              "能够打印出修改前后的属性值",
-              "理解 SaveChangesAsync 会重置追踪状态",
-            ],
-            reference: `ChangeTracker 是 EF Core 的核心机制。它自动追踪查询出来的实体，你直接修改属性即可，SaveChanges 时自动生成 UPDATE 语句。但这也有性能开销：只读查询应该用 AsNoTracking() 避免追踪。Detached 状态表示实体未被追踪。`,
-          },
-        ]}
-        conclusion={
-          <div className="space-y-2">
-            <p className="font-semibold text-teal-900">
-              ✅ 完成！你已经搭建了 EF Core 的基础架构，理解了 DbContext 和变更追踪机制。
-            </p>
-            <p>
-              <strong>💡 核心要点回顾：</strong>
-            </p>
-            <ul className="list-inside list-disc space-y-1 text-sm">
-              <li>
-                DbContext 是工作单元，通常注册为 Scoped（每个 HTTP 请求一个实例）
-              </li>
-              <li>
-                BaseEntity 基类统一管理审计字段，减少重复代码
-              </li>
-              <li>
-                全局查询过滤器实现软删除，但恢复场景需要 IgnoreQueryFilters()
-              </li>
-              <li>
-                迁移工具记录数据库结构变化，migrations add + database update 是标准流程
-              </li>
-              <li>
-                ChangeTracker 自动追踪实体变化，直接修改属性即可，SaveChanges 时自动生成 SQL
-              </li>
-              <li>
-                只读查询应使用 AsNoTracking() 避免追踪开销
-              </li>
-            </ul>
-            <p className="text-sm">
-              <strong>🎯 下一步：</strong>学习 EF Core 的关系映射、Include 预加载、分页查询等高级特性。
-            </p>
-          </div>
-        }
-      />
     </LessonShell>
   );
 };

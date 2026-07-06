@@ -1,13 +1,19 @@
 import {
+  LessonCheckpoint,
   LessonCode,
   LessonQuote,
   LessonShell,
-  LessonStep,
   LessonTable,
   TeacherTask,
 } from "@/components/lesson-ui";
 
-export const SetupSdkLesson = () => {
+export const SetupSdkLesson = ({
+  completedChecklistIds,
+  onToggleChecklistItem,
+}: {
+  completedChecklistIds: string[];
+  onToggleChecklistItem: (checklistItemId: string) => void;
+}) => {
   return (
     <LessonShell>
       <h3>为什么先学这一章</h3>
@@ -45,6 +51,19 @@ dotnet --list-sdks
 dotnet --list-runtimes`}
         language="bash"
         title="查看本机 SDK 与 Runtime"
+      />
+
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已确认本机 SDK / Runtime 版本，并知道后续项目的 TargetFramework 要与 SDK
+            版本匹配。
+          </p>
+        }
+        id="setup-sdk-version"
+        title="确认 SDK 版本"
+        onToggleChecklistItem={onToggleChecklistItem}
       />
 
       <p>
@@ -85,6 +104,19 @@ cd HelloCSharp
 dotnet run`}
         language="bash"
         title="创建并运行控制台项目"
+      />
+
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已创建控制台项目，运行后看到 <code>Hello, World!</code>，并打开过
+            <code>HelloCSharp.csproj</code> 查看目标框架配置。
+          </p>
+        }
+        id="setup-sdk-console-project"
+        title="创建并运行第一个项目"
+        onToggleChecklistItem={onToggleChecklistItem}
       />
 
       <p>看到类似输出即可：</p>
@@ -170,126 +202,6 @@ dotnet run`}
           改成本机已有版本
         </li>
       </ol>
-
-      <LessonStep
-        title="实战：确认并配置 SDK 版本"
-        steps={[
-          {
-            title: "查看本机 SDK 版本",
-            content: (
-              <p>
-                在终端执行 <code>dotnet --info</code> 命令，查看当前机器上安装的 .NET SDK 和 Runtime 版本。
-              </p>
-            ),
-            code: `dotnet --info
-dotnet --list-sdks
-dotnet --list-runtimes`,
-            codeLanguage: "bash",
-            codeTitle: "查看 SDK 信息",
-            checkpoints: [
-              "能看到 SDK Version 和版本号（如 10.0.100）",
-              "list-sdks 显示所有已安装的 SDK",
-              "list-runtimes 显示所有 Runtime（包括 ASP.NET Core Runtime）",
-            ],
-            reference:
-              "如果提示 'dotnet: command not found'，说明 SDK 没安装或环境变量未生效。重新安装 SDK 后，重启终端再试。Windows 用户检查 PATH 环境变量是否包含 dotnet 路径。",
-          },
-          {
-            title: "创建第一个控制台项目",
-            content: (
-              <p>
-                创建一个最简单的控制台项目，验证 SDK 能正常工作。
-              </p>
-            ),
-            code: `mkdir csharp-lab
-cd csharp-lab
-dotnet new console -n HelloCSharp
-cd HelloCSharp
-dotnet run`,
-            codeLanguage: "bash",
-            codeTitle: "创建并运行控制台项目",
-            checkpoints: [
-              "看到 'The template \"Console App\" was created successfully' 提示",
-              "项目目录下有 Program.cs 和 HelloCSharp.csproj 文件",
-              "dotnet run 后输出 'Hello, World!'",
-            ],
-            reference:
-              "如果编译失败，检查 .csproj 中的 TargetFramework 是否与你的 SDK 版本匹配。例如 SDK 是 8.0，TargetFramework 应该是 net8.0。",
-          },
-          {
-            title: "查看并理解 .csproj 文件",
-            content: (
-              <p>
-                打开 <code>HelloCSharp.csproj</code> 文件，理解项目配置的关键字段。
-              </p>
-            ),
-            code: `<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
-</Project>`,
-            codeLanguage: "xml",
-            codeTitle: "HelloCSharp.csproj",
-            checkpoints: [
-              "TargetFramework 指定目标 .NET 版本（如 net10.0、net8.0）",
-              "ImplicitUsings 启用后自动引入常用命名空间（如 System、System.Linq）",
-              "Nullable 启用可空引用类型检查（推荐开启）",
-              "OutputType=Exe 表示可执行程序（控制台应用）",
-            ],
-            reference:
-              "TargetFramework 必须与本机 SDK 匹配或更低。如果项目是 net10.0 但你只有 .NET 8 SDK，要么安装 .NET 10 SDK，要么把 TargetFramework 改成 net8.0。",
-          },
-          {
-            title: "（可选）固定项目 SDK 版本",
-            content: (
-              <p>
-                如果机器上有多个 SDK 版本，可以用 <code>global.json</code> 固定项目使用的 SDK 版本，避免版本漂移。
-              </p>
-            ),
-            code: `dotnet new globaljson
-# 会生成 global.json 文件`,
-            codeLanguage: "bash",
-            codeTitle: "生成 global.json",
-            checkpoints: [
-              "项目根目录出现 global.json 文件",
-              "文件内容包含 sdk.version 字段",
-              "版本号与 dotnet --list-sdks 输出的某个版本匹配",
-            ],
-            reference:
-              "global.json 的作用是锁定 SDK 版本。团队协作时，提交这个文件可以确保所有人用同一个 SDK 版本，避免\"我这能跑，你那不行\"的问题。",
-          },
-        ]}
-        conclusion={
-          <div className="space-y-2">
-            <p className="font-semibold text-teal-900">
-              ✅ 恭喜！你已经确认了 SDK 版本并创建了第一个项目。
-            </p>
-            <p>
-              <strong>💡 要点回顾：</strong>
-            </p>
-            <ul className="list-inside list-disc space-y-1 text-sm">
-              <li>
-                <code>dotnet --info</code> 查看 SDK 版本，<code>dotnet --list-sdks</code> 查看所有 SDK
-              </li>
-              <li>
-                .csproj 类似 package.json，记录项目配置和依赖
-              </li>
-              <li>
-                TargetFramework 必须与 SDK 版本匹配，否则编译失败
-              </li>
-              <li>
-                global.json 可以固定 SDK 版本，适合团队协作
-              </li>
-            </ul>
-            <p className="text-sm">
-              <strong>🎯 验收标准：</strong>能独立查看 SDK 版本、创建项目、理解 .csproj 配置。
-            </p>
-          </div>
-        }
-      />
     </LessonShell>
   );
 };

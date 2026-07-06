@@ -1,4 +1,5 @@
 import {
+  LessonCheckpoint,
 
   LessonCode,
   LessonCodeCompare,
@@ -9,7 +10,13 @@ import {
   TeacherTask,
 } from "@/components/lesson-ui";
 
-export const SignalrHubLesson = () => {
+export const SignalrHubLesson = ({
+  completedChecklistIds,
+  onToggleChecklistItem,
+}: {
+  completedChecklistIds: string[];
+  onToggleChecklistItem: (checklistItemId: string) => void;
+}) => {
   return (
     <LessonShell>
       <h3>本章你要掌握什么</h3>
@@ -400,6 +407,19 @@ public class ChatHub : Hub
         Groups 是连接级分组，不要把它当成数据库里的群组成员关系。业务成员关系要落库，重连后重新查询。
       </LessonQuote>
 
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已能搭建 Hub、加入/离开 Groups，并用 <code>Clients.Caller</code>、
+            <code>Clients.Group</code>、<code>Clients.Users</code> 发送不同范围的消息。
+          </p>
+        }
+        id="signalr-hub-main"
+        title="完成 SignalR Hub 主线"
+        onToggleChecklistItem={onToggleChecklistItem}
+      />
+
       <h3>阶段验收问题</h3>
       <ul>
         <li>SignalR 和 Socket.IO 为什么不能直接互通？</li>
@@ -410,14 +430,14 @@ public class ChatHub : Hub
         <li>Groups 和数据库里的群组成员关系有什么区别？</li>
       </ul>
 
-      <TeacherTask title="Phase 5 练习">
+      <TeacherTask title="Phase 5 主线任务">
         <p>
           在复刻项目中完成 Phase 5：实现实时通信 — SignalR Hub、房间系统、点对点消息、广播，对比你的
           NestJS Socket.IO 实现。
         </p>
       </TeacherTask>
 
-      <h3>实战练习步骤</h3>
+      <h3>实战步骤</h3>
 
       <LessonStep title="步骤 1：搭建最小 SignalR Hub 项目" defaultCollapsed>
         <h4>任务说明</h4>

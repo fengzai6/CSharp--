@@ -1,4 +1,5 @@
 import {
+  LessonCheckpoint,
   LessonCode,
   LessonQuote,
   LessonShell,
@@ -7,7 +8,13 @@ import {
   TeacherTask,
 } from "@/components/lesson-ui";
 
-export const EngineeringTestingLesson = () => {
+export const EngineeringTestingLesson = ({
+  completedChecklistIds,
+  onToggleChecklistItem,
+}: {
+  completedChecklistIds: string[];
+  onToggleChecklistItem: (checklistItemId: string) => void;
+}) => {
   return (
     <LessonShell>
       <h3>本章你要掌握什么</h3>
@@ -297,13 +304,25 @@ public class UsersControllerIntegrationTests : IAsyncLifetime
         title="基于 Testcontainers 的集成测试"
       />
 
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已能区分单元测试和集成测试的边界，并知道何时使用 Testcontainers 验证真实数据库流程。
+          </p>
+        }
+        id="engineering-testing-main"
+        title="完成测试分层主线"
+        onToggleChecklistItem={onToggleChecklistItem}
+      />
+
       <h3>阶段验收问题</h3>
       <ul>
         <li>单元测试、集成测试、E2E 测试分别适合验证什么？</li>
         <li>为什么数据库集成测试更推荐 Testcontainers 而不是 EF Core InMemory？</li>
       </ul>
 
-      <TeacherTask title="Phase 6 练习">
+      <TeacherTask title="Phase 6 主线任务">
         <p>
           在复刻项目中完成 Phase 6：建立工程化体系 — 测试（单元+集成）、结构化日志、健康检查、Swagger、Redis
           缓存、Docker 发布。
@@ -315,284 +334,35 @@ public class UsersControllerIntegrationTests : IAsyncLifetime
         defaultCollapsed={true}
         steps={[
           {
-            title: "为 UserService 编写单元测试",
+            title: "任务目标",
             content: (
               <p>
-                使用 xUnit + Moq + FluentAssertions 为 UserService 的业务逻辑编写单元测试。
+                给复刻项目补上一组会长期保留的测试资产：至少 1 个核心业务单测、1 个参数化测试、1 个接真实数据库的集成测试。
               </p>
             ),
-            code: `// 安装依赖
-dotnet add package xunit
-dotnet add package xunit.runner.visualstudio
-dotnet add package Moq
-dotnet add package FluentAssertions
-
-// UserServiceTests.cs
-public class UserServiceTests
-{
-    private readonly Mock<IUserRepository> _mockRepo;
-    private readonly Mock<IPasswordService> _mockPassword;
-    private readonly UserService _sut; // System Under Test
-
-    public UserServiceTests()
-    {
-        _mockRepo = new Mock<IUserRepository>();
-        _mockPassword = new Mock<IPasswordService>();
-        _sut = new UserService(_mockRepo.Object, _mockPassword.Object);
-    }
-
-    [Fact]
-    public async Task CreateUserAsync_ValidInput_ReturnsUser()
-    {
-        // Arrange
-        var dto = new CreateUserDto { Email = "test@example.com", Password = "Pass123!" };
-        _mockPassword.Setup(x => x.HashPassword(dto.Password))
-            .Returns("hashed_password");
-        _mockRepo.Setup(x => x.AddAsync(It.IsAny<User>()))
-            .ReturnsAsync((User u) => u);
-
-        // Act
-        var result = await _sut.CreateUserAsync(dto);
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Email.Should().Be(dto.Email);
-        result.PasswordHash.Should().Be("hashed_password");
-        _mockRepo.Verify(x => x.AddAsync(It.IsAny<User>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task CreateUserAsync_DuplicateEmail_ThrowsException()
-    {
-        // Arrange
-        var dto = new CreateUserDto { Email = "existing@example.com", Password = "Pass123!" };
-        _mockRepo.Setup(x => x.GetByEmailAsync(dto.Email))
-            .ReturnsAsync(new User { Email = dto.Email });
-
-        // Act & Assert
-        await _sut.Invoking(s => s.CreateUserAsync(dto))
-            .Should().ThrowAsync<DuplicateEmailException>()
-            .WithMessage("*already exists*");
-    }
-}`,
-            codeLanguage: "csharp",
-            codeTitle: "单元测试示例",
             checkpoints: [
-              "使用 Mock 隔离依赖（Repository、PasswordService）",
-              "遵循 AAA 模式：Arrange（准备）、Act（执行）、Assert（断言）",
-              "用 FluentAssertions 让断言更易读（Should().Be()）",
-              "用 Verify 验证 Mock 方法是否被调用",
+              "单测只覆盖业务规则，不直接访问数据库",
+              "参数化测试覆盖密码、邮箱或分页等边界输入",
+              "集成测试命中真实数据库环境，而不是 EF Core InMemory",
+              "测试命名和断言能直接说明验证行为",
             ],
             reference:
-              "单元测试只测业务逻辑，不访问数据库或外部服务。Mock 让测试快速、隔离、可重复。",
+              "保留的是测试交付物，不是再把正文里的示例代码重抄一遍。",
           },
           {
-            title: "用 Theory + InlineData 写参数化测试",
+            title: "交付要求",
             content: (
               <p>
-                使用 <code>[Theory]</code> 和 <code>[InlineData]</code> 编写参数化测试，避免重复代码。
+                完成后，应该能用 <code>dotnet test</code> 稳定跑过，并清楚说明哪些测试属于单元层、哪些属于集成层，以及为什么这样分层。
               </p>
             ),
-            code: `public class PasswordValidatorTests
-{
-    private readonly PasswordValidator _validator = new();
-
-    [Theory]
-    [InlineData("Pass123!", true)]
-    [InlineData("ValidP@ss1", true)]
-    [InlineData("short", false)]           // 太短
-    [InlineData("nouppercase1!", false)]   // 无大写
-    [InlineData("NOLOWERCASE1!", false)]   // 无小写
-    [InlineData("NoDigits!", false)]       // 无数字
-    [InlineData("NoSpecial123", false)]    // 无特殊字符
-    public void Validate_PasswordStrength(string password, bool expected)
-    {
-        // Act
-        var result = _validator.IsValid(password);
-
-        // Assert
-        result.Should().Be(expected);
-    }
-
-    [Theory]
-    [InlineData("test@example.com", true)]
-    [InlineData("invalid-email", false)]
-    [InlineData("@example.com", false)]
-    [InlineData("test@", false)]
-    public void Validate_EmailFormat(string email, bool expected)
-    {
-        // Act
-        var result = EmailValidator.IsValid(email);
-
-        // Assert
-        result.Should().Be(expected);
-    }
-}`,
-            codeLanguage: "csharp",
-            codeTitle: "参数化测试",
             checkpoints: [
-              "[Theory] 标记参数化测试方法",
-              "[InlineData] 提供每组测试数据",
-              "一个测试方法覆盖多个边界场景",
-              "测试报告会显示每组数据的执行结果",
+              "至少有一个失败场景断言而不只有 happy path",
+              "集成测试能验证数据库真实读写结果",
+              "测试结构能直接服务后续回归，而不是一次性演示代码",
             ],
-            reference:
-              "Theory 适合测试相同逻辑的不同输入。比写 10 个 [Fact] 方法更简洁，且易于添加新场景。",
-          },
-          {
-            title: "编写 UsersController 集成测试",
-            content: (
-              <p>
-                使用 <code>WebApplicationFactory</code> + <code>Testcontainers</code> 编写真实的集成测试，验证完整的请求-响应流程。
-              </p>
-            ),
-            code: `// 安装依赖
-dotnet add package Microsoft.AspNetCore.Mvc.Testing
-dotnet add package Testcontainers
-
-// IntegrationTestBase.cs
-public class IntegrationTestBase : IAsyncLifetime
-{
-    private readonly PostgreSqlContainer _dbContainer = new PostgreSqlBuilder()
-        .WithImage("postgres:16")
-        .Build();
-
-    protected HttpClient Client { get; private set; } = null!;
-    protected ApplicationDbContext DbContext { get; private set; } = null!;
-
-    public async Task InitializeAsync()
-    {
-        await _dbContainer.StartAsync();
-
-        var factory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.ConfigureServices(services =>
-                {
-                    // 替换数据库连接为测试容器
-                    var descriptor = services.SingleOrDefault(
-                        d => d.ServiceType == typeof(DbContextOptions<ApplicationDbContext>));
-                    if (descriptor != null) services.Remove(descriptor);
-
-                    services.AddDbContext<ApplicationDbContext>(options =>
-                        options.UseNpgsql(_dbContainer.GetConnectionString()));
-                });
-            });
-
-        Client = factory.CreateClient();
-        DbContext = factory.Services.GetRequiredService<ApplicationDbContext>();
-        await DbContext.Database.MigrateAsync();
-    }
-
-    public async Task DisposeAsync()
-    {
-        await _dbContainer.DisposeAsync();
-    }
-}
-
-// UsersControllerTests.cs
-public class UsersControllerTests : IntegrationTestBase
-{
-    [Fact]
-    public async Task CreateUser_ValidInput_Returns201()
-    {
-        // Arrange
-        var dto = new CreateUserDto
-        {
-            Email = "newuser@example.com",
-            Password = "Pass123!",
-            Username = "newuser"
-        };
-
-        // Act
-        var response = await Client.PostAsJsonAsync("/api/users", dto);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var user = await response.Content.ReadFromJsonAsync<UserDto>();
-        user.Should().NotBeNull();
-        user!.Email.Should().Be(dto.Email);
-
-        // 验证数据库
-        var dbUser = await DbContext.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
-        dbUser.Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task GetUsers_WithPagination_ReturnsPagedResult()
-    {
-        // Arrange
-        await SeedUsersAsync(25);
-
-        // Act
-        var response = await Client.GetAsync("/api/users?page=2&pageSize=10");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<PagedResult<UserDto>>();
-        result.Should().NotBeNull();
-        result!.Items.Should().HaveCount(10);
-        result.TotalCount.Should().Be(25);
-        result.Page.Should().Be(2);
-    }
-
-    private async Task SeedUsersAsync(int count)
-    {
-        for (int i = 0; i < count; i++)
-        {
-            DbContext.Users.Add(new User
-            {
-                Email = $"user{i}@example.com",
-                Username = $"user{i}",
-                PasswordHash = "hashed"
-            });
-        }
-        await DbContext.SaveChangesAsync();
-    }
-}`,
-            codeLanguage: "csharp",
-            codeTitle: "集成测试",
-            checkpoints: [
-              "WebApplicationFactory 启动真实的 ASP.NET Core 应用",
-              "Testcontainers 提供真实的 PostgreSQL 容器",
-              "测试完整的 HTTP 请求-响应流程",
-              "验证数据库状态确保数据真正写入",
-              "每个测试后容器自动清理",
-            ],
-            reference:
-              "集成测试比单元测试慢，但能发现路由、序列化、数据库映射等问题。Testcontainers 比 InMemory 数据库更接近生产环境（支持 SQL 方言、约束等）。",
           },
         ]}
-        conclusion={
-          <div className="space-y-2">
-            <p className="font-semibold text-teal-900">
-              ✅ 恭喜！你已经掌握了 .NET 的单元测试和集成测试。
-            </p>
-            <p>
-              <strong>💡 要点回顾：</strong>
-            </p>
-            <ul className="list-inside list-disc space-y-1 text-sm">
-              <li>
-                单元测试用 Mock 隔离依赖，快速验证业务逻辑
-              </li>
-              <li>
-                集成测试用 WebApplicationFactory + Testcontainers 验证完整流程
-              </li>
-              <li>
-                [Theory] + [InlineData] 实现参数化测试，避免重复代码
-              </li>
-              <li>
-                AAA 模式（Arrange-Act-Assert）让测试结构清晰
-              </li>
-              <li>
-                FluentAssertions 让断言更易读，Verify 验证 Mock 调用
-              </li>
-            </ul>
-            <p className="text-sm">
-              <strong>🎯 验收标准：</strong>能编写单元测试、参数化测试、集成测试，理解测试分层。
-            </p>
-          </div>
-        }
       />
     </LessonShell>
   );

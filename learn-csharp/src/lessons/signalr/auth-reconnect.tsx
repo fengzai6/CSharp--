@@ -1,4 +1,5 @@
 import {
+  LessonCheckpoint,
 
   LessonCode,
   LessonQuote,
@@ -7,7 +8,13 @@ import {
   TeacherTask,
 } from "@/components/lesson-ui";
 
-export const SignalrAuthReconnectLesson = () => {
+export const SignalrAuthReconnectLesson = ({
+  completedChecklistIds,
+  onToggleChecklistItem,
+}: {
+  completedChecklistIds: string[];
+  onToggleChecklistItem: (checklistItemId: string) => void;
+}) => {
   return (
     <LessonShell>
       <h3>本章你要掌握什么</h3>
@@ -176,6 +183,18 @@ connection.onreconnected((connectionId) => {
           在日志中记录包含 <code>access_token</code> 的完整 URL。
         </li>
       </ul>
+
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已能让 Hub 使用 JWT 身份，前端通过 <code>accessTokenFactory</code> 连接，并在重连后重新加入房间。
+          </p>
+        }
+        id="signalr-auth-reconnect-main"
+        title="完成 SignalR 认证与重连主线"
+        onToggleChecklistItem={onToggleChecklistItem}
+      />
 
       <h3>阶段验收问题</h3>
       <ul>

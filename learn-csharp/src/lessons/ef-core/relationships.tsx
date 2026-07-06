@@ -1,4 +1,5 @@
 import {
+  LessonCheckpoint,
   LessonCode,
   LessonQuote,
   LessonShell,
@@ -7,7 +8,13 @@ import {
   TeacherTask,
 } from "@/components/lesson-ui";
 
-export const EfRelationshipsLesson = () => {
+export const EfRelationshipsLesson = ({
+  completedChecklistIds,
+  onToggleChecklistItem,
+}: {
+  completedChecklistIds: string[];
+  onToggleChecklistItem: (checklistItemId: string) => void;
+}) => {
   return (
     <LessonShell>
       <h3>本章你要掌握什么</h3>
@@ -322,6 +329,18 @@ var groups = await _context.Groups
         <li>以为 EF Core 有 TypeORM TreeRepository 同款内置能力。</li>
       </ul>
 
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已能区分显式连接实体、自引用树结构、<code>Include</code> 和投影查询的适用场景。
+          </p>
+        }
+        id="ef-relationships-main"
+        title="完成关系建模与查询策略"
+        onToggleChecklistItem={onToggleChecklistItem}
+      />
+
       <h3>阶段验收问题</h3>
       <ul>
         <li>查询 DTO 时为什么优先用 <code>Select</code> 投影？</li>
@@ -329,7 +348,7 @@ var groups = await _context.Groups
         <li>为什么权限、成员这类多对多关系推荐显式中间实体而不是 skip navigation？</li>
       </ul>
 
-      <TeacherTask title="Phase 4 练习">
+      <TeacherTask title="Phase 4 主线任务">
         <p>
           在复刻项目中完成 Phase 4：实现群组系统 — 树形 Group 结构、Member
           关系、批量添加成员事务。
@@ -337,7 +356,7 @@ var groups = await _context.Groups
       </TeacherTask>
 
       <LessonStep
-        title="实战任务：EF Core 关系建模与高效查询"
+        title="实战：EF Core 关系建模与高效查询"
         steps={[
           {
             title: "建模 User → UserRole → Role 多对多关系",
