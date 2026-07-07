@@ -152,6 +152,13 @@ dotnet publish -c Release -r linux-x64 \\
         title="AOT 发布"
       />
 
+      <p>
+        这条命令的核心是 <code>dotnet publish</code>：它生成可部署产物。
+        <code>-c Release</code> 使用发布配置，<code>-r linux-x64</code>{" "}
+        指定目标运行平台，<code>PublishAot=true</code> 打开 AOT，<code>-o</code>{" "}
+        指定输出目录。它不是普通开发启动命令，适合在确认兼容性后用于发布阶段。
+      </p>
+
       <h4>AOT 的限制</h4>
       <LessonTable
         headers={["不支持", "说明"]}
@@ -192,6 +199,11 @@ dotnet publish -c Release -r linux-x64 --self-contained -o ./publish`}
         language="bash"
         title="普通发布与自包含发布"
       />
+
+      <p>
+        普通发布默认是框架依赖发布，目标机器需要安装匹配的 .NET Runtime；
+        <code>--self-contained</code> 会把 Runtime 一起打进发布产物，部署更独立，但体积更大。初学阶段先理解普通发布，再评估是否需要自包含或 AOT。
+      </p>
 
       <h3>.NET 生态总览：常见 NuGet 包速查</h3>
       <LessonTable
@@ -351,6 +363,12 @@ done
           language="bash"
           title="测试限流"
         />
+        <p>
+          这段脚本用循环连续请求登录端点，目的是触发登录策略的每分钟限制。
+          <code>-H</code> 设置 JSON 请求头，<code>-d</code> 发送请求体，
+          <code>-w</code> 打印状态码。只看响应内容不够，限流是否生效主要看状态码是否变成
+          <code>429</code>。
+        </p>
       </LessonStep>
 
       <LessonStep title="步骤 2：编写多阶段 Dockerfile">
@@ -451,6 +469,9 @@ docker rm myapp-container`}
           language="bash"
           title="Docker 操作命令"
         />
+        <p>
+          这组命令按真实发布排查顺序排列：先构建镜像，再运行容器，再访问健康检查确认应用可用，最后看日志和进入容器验证最终镜像只包含运行时。删除容器是清理步骤，避免下次运行同名容器失败。
+        </p>
       </LessonStep>
 
       <LessonStep title="步骤 3：尝试 AOT 发布">
@@ -505,6 +526,11 @@ time ./publish/aot/MyApp.Api &
           language="bash"
           title="AOT 发布命令"
         />
+
+        <p>
+          这段不是为了马上替换普通发布，而是用同一个项目观察 AOT 的产物形态和启动时间。看到单个原生可执行文件，说明产物不再依赖
+          <code>dotnet MyApp.Api.dll</code> 这种运行方式；如果发布失败，优先检查反射、JSON 序列化和第三方库兼容性。
+        </p>
 
         <LessonCode
           code={`# AOT Dockerfile
@@ -573,6 +599,10 @@ docker stats myapp-normal myapp-aot`}
           language="bash"
           title="对比测试"
         />
+
+        <p>
+          对比测试关注三个指标：发布产物大小、容器镜像大小和启动时间。AOT 的价值不是“更高级”，而是在冷启动、镜像体积或资源占用成为瓶颈时，用兼容性成本换运行期收益。
+        </p>
 
         <LessonQuote>
           如果遇到 AOT 兼容性问题（如 JSON 序列化），需要使用 Source Generator：

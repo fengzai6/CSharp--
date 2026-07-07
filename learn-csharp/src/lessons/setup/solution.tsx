@@ -2,6 +2,7 @@ import {
   LessonCheckpoint,
   LessonCode,
   LessonShell,
+  LessonTable,
   TeacherTask,
 } from "@/components/lesson-ui";
 
@@ -41,6 +42,23 @@ dotnet sln add MyApp.Infrastructure/MyApp.Infrastructure.csproj`}
         title="创建解决方案与多项目"
       />
 
+      <p>
+        这段命令分三组看：先创建一个解决方案目录，再生成三个独立项目，最后把三个
+        <code>.csproj</code> 加入 <code>.sln</code> 管理。<code>.sln</code>{" "}
+        不包含业务代码，它只是让 IDE、<code>dotnet build</code> 和团队成员知道“这些项目属于同一个工作区”。
+      </p>
+
+      <LessonTable
+        headers={["命令", "作用"]}
+        rows={[
+          ["mkdir / cd", "创建并进入解决方案根目录"],
+          ["dotnet new sln -n MyApp", "生成 MyApp.sln，用来管理多个项目"],
+          ["dotnet new webapi", "生成 HTTP 入口项目，放 Program.cs 和 API 端点"],
+          ["dotnet new classlib", "生成类库项目，放业务层或基础设施层代码"],
+          ["dotnet sln add", "把 .csproj 注册到 .sln，方便统一构建和 IDE 展示"],
+        ]}
+      />
+
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={
@@ -74,6 +92,22 @@ dotnet add MyApp.Api/MyApp.Api.csproj reference MyApp.Infrastructure/MyApp.Infra
 dotnet add MyApp.Infrastructure/MyApp.Infrastructure.csproj reference MyApp.Core/MyApp.Core.csproj`}
         language="bash"
         title="建立项目引用关系"
+      />
+
+      <p>
+        <code>dotnet add ... reference ...</code> 是在“调用方项目”的 <code>.csproj</code>{" "}
+        中写入 <code>ProjectReference</code>。引用建立后，调用方才能使用被引用项目里的类型；同时编译器会强制依赖方向，避免
+        Core 反过来依赖 Infrastructure。
+      </p>
+
+      <LessonTable
+        headers={["引用", "为什么需要"]}
+        rows={[
+          ["Api -> Core", "API 层要使用业务模型、接口和纯业务逻辑"],
+          ["Api -> Infrastructure", "API 层负责组装数据库、缓存等具体实现"],
+          ["Infrastructure -> Core", "基础设施层实现 Core 定义的接口"],
+          ["Core 不引用外层", "业务层保持干净，不被数据库、框架或 HTTP 细节绑住"],
+        ]}
       />
 
       <LessonCheckpoint

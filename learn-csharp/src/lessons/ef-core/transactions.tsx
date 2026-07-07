@@ -330,6 +330,12 @@ dotnet ef database update AddUsersAndRolesTables  # 回滚到指定迁移`}
         title="迁移命令"
       />
 
+      <p>
+        迁移命令要按顺序理解：先用 <code>migrations add</code>{" "}
+        把模型变化固化成迁移文件，再用 <code>database update</code>{" "}
+        改数据库。回滚命令会让数据库退回到指定迁移状态，适合本地学习和开发环境排错；生产环境不要随手回滚。
+      </p>
+
       <h4>生产迁移脚本</h4>
       <p>
         本地学习可以直接 <code>database update</code>。生产环境更推荐生成 SQL
@@ -345,6 +351,10 @@ dotnet ef migrations script AddUsersAndRolesTables AddGroupTreeStructure \
         language="bash"
         title="生产迁移脚本"
       />
+
+      <p>
+        <code>--idempotent</code> 会生成可重复执行的 SQL：脚本会检查目标数据库已经执行到哪一个迁移，再补上缺失部分。指定起止迁移则适合审查某一次版本升级到底会执行哪些 SQL。
+      </p>
 
       <h3>常见误区</h3>
       <ul>

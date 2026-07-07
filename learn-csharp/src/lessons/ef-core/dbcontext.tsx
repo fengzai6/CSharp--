@@ -61,6 +61,12 @@ dotnet add package Npgsql.EntityFrameworkCore.PostgreSQL`}
         title="安装 EF Core"
       />
 
+      <p>
+        这里的包分两类：数据库 provider 负责把 EF Core 查询翻译成具体数据库的 SQL，
+        <code>Microsoft.EntityFrameworkCore.Tools</code> 提供 <code>dotnet ef</code>{" "}
+        迁移命令。实际项目只选一个数据库 provider，例如 SQL Server 或 PostgreSQL，不需要两个都装。
+      </p>
+
       <h3>DbContext — 数据库上下文</h3>
       <p>
         <code>DbContext</code> 是工作单元入口。每个 <code>DbSet&lt;T&gt;</code>{" "}
@@ -241,6 +247,13 @@ dotnet ef dbcontext scaffold "Host=localhost;Database=myapp;Username=postgres;Pa
         language="bash"
         title="dotnet ef 迁移命令"
       />
+
+      <p>
+        <code>migrations add</code> 只生成迁移文件，不会改数据库；
+        <code>database update</code> 才会把迁移应用到数据库；
+        <code>dbcontext scaffold</code> 是反向工程，用已有数据库生成 C# 模型。学习 Code First 时，主线只需要先掌握
+        <code>migrations add</code> 和 <code>database update</code>。
+      </p>
 
       <h3>常见误区</h3>
       <ul>

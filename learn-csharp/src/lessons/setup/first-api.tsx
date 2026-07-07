@@ -31,6 +31,13 @@ dotnet run`}
         title="创建并运行 Web API"
       />
 
+      <p>
+        这三步分别对应“生成项目”“进入项目目录”“启动开发服务器”。
+        <code>dotnet new webapi</code> 会按模板生成 <code>.csproj</code>、
+        <code>Program.cs</code> 和示例 API；<code>dotnet run</code>{" "}
+        会编译并启动 Kestrel，终端输出的监听地址就是后面访问 Swagger 的依据。
+      </p>
+
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={
@@ -72,6 +79,12 @@ dotnet run`}
         title="安装 NuGet 包"
       />
 
+      <p>
+        <code>dotnet add package</code> 会把包引用写入当前项目的 <code>.csproj</code>{" "}
+        文件，并尝试还原依赖。它类似 <code>npm install</code> 写入{" "}
+        <code>package.json</code>，但 .NET 记录的是 <code>PackageReference</code>。
+      </p>
+
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={
@@ -97,7 +110,11 @@ dotnet run`}
         title="csproj 中的 PackageReference"
       />
 
-      <p>还原依赖：</p>
+      <p>
+        还原依赖会读取 <code>.csproj</code> 中的 <code>PackageReference</code>，把缺失的包下载到
+        NuGet 全局缓存。平时 <code>dotnet build</code> / <code>dotnet run</code>{" "}
+        会自动 restore；手动执行它主要用于排查包还原问题。
+      </p>
 
       <LessonCode code="dotnet restore" language="bash" title="还原 NuGet 包" />
 

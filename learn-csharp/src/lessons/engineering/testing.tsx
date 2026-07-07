@@ -86,6 +86,12 @@ dotnet test`}
       />
 
       <p>
+        这组命令先创建 xUnit 测试项目，再安装 Mock 和断言库，最后用{" "}
+        <code>dotnet test</code> 验证测试项目能跑起来。真实项目中还要把测试项目加入
+        <code>.sln</code>，并引用被测试的业务项目，例如 <code>MyApp.Core</code>。
+      </p>
+
+      <p>
         单元测试用 Moq 隔离依赖，用 FluentAssertions 写断言。注意 xUnit 的
         <code>[Fact]</code> 对应 Jest 的单个测试，<code>[Theory]</code> +{" "}
         <code>[InlineData]</code> 用于参数化测试。
@@ -233,6 +239,10 @@ dotnet test --logger "console;verbosity=detailed" # 详细输出`}
         title="dotnet test 常用命令"
       />
 
+      <p>
+        <code>dotnet test</code> 默认会先编译再运行所有测试。过滤参数用于缩小排查范围；覆盖率和详细日志适合在定位失败时使用，不建议每次本地快速反馈都全开。
+      </p>
+
       <h3>Testcontainers — 集成测试最佳实践</h3>
       <LessonQuote>
         替代 InMemory DbContext，用真实 PostgreSQL 容器进行测试，避免 ORM
@@ -244,6 +254,10 @@ dotnet add package Testcontainers.PostgreSQL`}
         language="bash"
         title="安装 Testcontainers"
       />
+
+      <p>
+        这个包只负责在测试过程中启动 PostgreSQL 容器。它不是生产数据库驱动，也不是替代 EF Core provider；测试项目仍然要通过应用的真实数据访问代码连接到这个临时数据库。
+      </p>
       <p>
         Testcontainers 在测试启动时拉起真实容器、结束时自动销毁。通过实现{" "}
         <code>IAsyncLifetime</code> 管理容器生命周期，并把真实连接字符串注入到{" "}

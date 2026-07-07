@@ -126,7 +126,11 @@ public class PasswordService
       />
 
       <h3>JWT 配置</h3>
-      <p>安装包：</p>
+      <p>
+        安装 JwtBearer 包后，ASP.NET Core 才知道如何从请求头里的{" "}
+        <code>Authorization: Bearer ...</code> 解析 JWT，并把解析结果放进{" "}
+        <code>HttpContext.User</code>。
+      </p>
       <LessonCode
         code="dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer"
         language="bash"
@@ -163,6 +167,13 @@ Jwt__Secret=a-long-random-secret-at-least-32-bytes`}
         language="bash"
         title="密钥配置方式"
       />
+
+      <p>
+        <code>dotnet user-secrets init</code> 会给当前项目启用本地密钥存储，
+        <code>set</code> 会把密钥写到用户目录下，而不是写进仓库。生产环境的{" "}
+        <code>Jwt__Secret</code> 使用双下划线表示配置层级，对应 JSON 里的{" "}
+        <code>Jwt:Secret</code>。
+      </p>
 
       <p>注册认证：</p>
       <LessonCode

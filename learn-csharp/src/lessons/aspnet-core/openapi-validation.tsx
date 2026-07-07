@@ -67,6 +67,12 @@ dotnet add package FluentValidation.AspNetCore`}
         title="安装 FluentValidation"
       />
 
+      <p>
+        这里装两个包是因为职责不同：<code>FluentValidation</code> 提供验证规则本身，
+        <code>FluentValidation.AspNetCore</code> 把验证接入 ASP.NET Core 的模型绑定流程。只安装前者，你可以手动调用验证器；安装后者，Controller
+        才能在请求进入 Action 前自动校验 DTO。
+      </p>
+
       <LessonCode
         code={`using FluentValidation;
 

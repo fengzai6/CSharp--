@@ -74,6 +74,12 @@ export const SignalrHubLesson = ({
         title="SignalR 依赖"
       />
 
+      <p>
+        服务端 SignalR 已经随 ASP.NET Core Web 运行时提供，所以后端通常不需要额外安装服务端包。前端必须安装
+        <code>@microsoft/signalr</code>，因为 SignalR 协议和 Socket.IO 不兼容，不能直接复用
+        <code>socket.io-client</code>。
+      </p>
+
       <LessonCode
         code={`// Program.cs
 builder.Services.AddSignalR();
@@ -87,6 +93,12 @@ app.Run();`}
         language="csharp"
         title="注册并映射 Hub"
       />
+
+      <p>
+        <code>AddSignalR()</code> 把 Hub、连接管理和消息发送服务注册进 DI；
+        <code>MapHub&lt;ChatHub&gt;("/chat")</code> 把一个 Hub 暴露成连接地址。前端连接的 URL
+        必须和这里的路由一致，例如 <code>/chat</code>。
+      </p>
 
       <h3>Hub 核心概念</h3>
       <h4>Hub 对应 Gateway</h4>
@@ -461,6 +473,12 @@ cd SignalRChat`}
           language="bash"
           title="创建项目"
         />
+
+        <p>
+          这里用 <code>webapi</code> 模板是为了得到完整的 ASP.NET Core Web 项目骨架：它已经有
+          <code>Program.cs</code>、配置文件和 HTTP 管道，后面只需要在这个基础上注册 SignalR 并添加
+          Hub 类。
+        </p>
 
         <LessonCode
           code={`// Hubs/ChatHub.cs
@@ -943,10 +961,16 @@ await connection.invoke("GetOnlineStats");`}
             静态字典只在单实例中有效。多实例部署时需要使用 <strong>Redis Backplane</strong> 或持久化存储来共享连接状态：
           </p>
           <LessonCode
-            code={`// 安装 Redis backplane
-dotnet add package Microsoft.AspNetCore.SignalR.StackExchangeRedis
-
-// Program.cs
+            code={`dotnet add package Microsoft.AspNetCore.SignalR.StackExchangeRedis`}
+            language="bash"
+            title="安装 Redis Backplane 包"
+          />
+          <p>
+            安装包只是让 SignalR 具备用 Redis 同步消息的能力；真正让多实例共享分组和广播消息的是下面的
+            <code>AddStackExchangeRedis</code> 配置。没有它时，单个实例内能发消息，多实例之间不会互相知道连接状态。
+          </p>
+          <LessonCode
+            code={`// Program.cs
 builder.Services.AddSignalR()
     .AddStackExchangeRedis("localhost:6379", options =>
     {

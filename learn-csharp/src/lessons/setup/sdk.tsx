@@ -53,6 +53,14 @@ dotnet --list-runtimes`}
         title="查看本机 SDK 与 Runtime"
       />
 
+      <p>
+        这三条命令不是为了“看版本号”这么简单：<code>dotnet --info</code>{" "}
+        看当前 SDK、运行时和系统环境；<code>--list-sdks</code>{" "}
+        看本机能用哪些 SDK；<code>--list-runtimes</code>{" "}
+        看只负责运行程序的 Runtime。后面遇到 <code>TargetFramework</code>{" "}
+        不匹配、命令不存在或运行失败，先从这里排查。
+      </p>
+
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={
@@ -76,6 +84,12 @@ dotnet --list-runtimes`}
         language="bash"
         title="生成 global.json"
       />
+
+      <p>
+        <code>global.json</code> 的作用是固定当前目录树使用的 SDK 版本。它类似前端项目里固定
+        Node 版本的配置：团队成员进入这个目录执行 <code>dotnet</code>{" "}
+        命令时，会优先使用文件里指定的 SDK，避免同一个项目在不同机器上用不同 SDK 编译。
+      </p>
 
       <p>生成后检查：</p>
 
@@ -105,6 +119,11 @@ dotnet run`}
         language="bash"
         title="创建并运行控制台项目"
       />
+
+      <p>
+        这组命令完成一个最小闭环：先创建学习目录，再用模板生成控制台项目，进入项目目录后执行
+        <code>dotnet run</code>。<code>dotnet run</code> 会先编译再运行，所以它既能验证项目模板是否正确，也能验证当前 SDK 是否可用。
+      </p>
 
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}

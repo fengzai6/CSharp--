@@ -377,7 +377,9 @@ public class ChatHub : Hub
         <h4>详细步骤</h4>
         <ol>
           <li>
-            安装 SignalR 客户端库：<code>npm install @microsoft/signalr</code>
+            安装 SignalR 客户端库：<code>npm install @microsoft/signalr</code>。
+            这个包实现 SignalR 客户端协议，用来和 ASP.NET Core Hub 通信，不能用
+            Socket.IO 客户端替代。
           </li>
           <li>
             创建连接并配置 <code>accessTokenFactory</code>：

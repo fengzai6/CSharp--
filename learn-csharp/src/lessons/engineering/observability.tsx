@@ -125,6 +125,10 @@ dotnet add package Serilog.Sinks.Seq   # 集中日志平台`}
         title="安装 Serilog"
       />
       <p>
+        <code>Serilog</code> 是日志核心库，<code>Sinks</code>{" "}
+        决定日志输出到哪里：Console 用于终端，File 用于本地文件，Seq 用于集中日志平台。只装核心库还不能把日志写到目标位置。
+      </p>
+      <p>
         生产级配置通过 Enrich 注入机器名、环境名、应用名等上下文，并按天滚动文件、限制保留天数：
       </p>
       <LessonCode
@@ -154,6 +158,9 @@ dotnet add package Serilog.Sinks.Seq   # 集中日志平台`}
         language="bash"
         title="安装内存缓存"
       />
+      <p>
+        内存缓存运行在当前应用进程里，速度快、接入简单，但多实例之间不共享。它适合缓存单实例内可重复计算或可重新加载的数据。
+      </p>
       <p>
         通过 <code>IMemoryCache</code> 实现“先查缓存、未命中再查库并回填”的常见模式：
       </p>
@@ -211,6 +218,10 @@ dotnet add package Serilog.Sinks.Seq   # 集中日志平台`}
         title="安装 Redis 缓存"
       />
       <p>
+        Redis 缓存适合多实例共享缓存状态。安装包只是让 ASP.NET Core 能注册{" "}
+        <code>IDistributedCache</code> 的 Redis 实现，真正的 Redis 地址仍然来自配置。
+      </p>
+      <p>
         注册 Redis 后，业务层换用 <code>IDistributedCache</code>，使用方式与内存缓存高度一致，差别是值需要序列化为字符串：
       </p>
       <LessonCode
@@ -265,6 +276,9 @@ dotnet add package AspNetCore.HealthChecks.Redis`}
         language="bash"
         title="安装健康检查包"
       />
+      <p>
+        健康检查按依赖类型安装扩展包：URI 用于外部 HTTP 服务，SqlServer 用于数据库，Redis 用于缓存。装包只是提供检查器，是否检查、失败算降级还是不健康，要在注册时明确配置。
+      </p>
       <p>注册时为每个依赖设置失败状态（Degraded / Unhealthy）：</p>
       <LessonCode
         code={`// Program.cs
