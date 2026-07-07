@@ -251,12 +251,12 @@ app.UseExceptionHandler();
 app.UseStatusCodePages();
 
 [HttpGet("{id}")]
-public async Task<ActionResult<UserDto>> GetById(string id)
+public async Task<ActionResult<WorkItemSummaryDto>> GetById(string id)
 {
-    var user = await _userService.GetByIdAsync(id);
-    return user is null
-        ? Problem(statusCode: 404, title: "用户不存在")
-        : Ok(user);
+    var item = await _workItemService.GetByIdAsync(id);
+    return item is null
+        ? Problem(statusCode: 404, title: "任务不存在")
+        : Ok(item);
 }`}
         language="csharp"
         title="ProblemDetails"
@@ -349,10 +349,10 @@ builder.Services.Configure<JwtSettings>(
     builder.Configuration.GetSection("Jwt"));
 
 // Service 中使用
-public class UserService
+public class TokenService
 {
     private readonly JwtSettings _settings;
-    public UserService(IOptions<JwtSettings> options)
+    public TokenService(IOptions<JwtSettings> options)
     {
         _settings = options.Value;
     }

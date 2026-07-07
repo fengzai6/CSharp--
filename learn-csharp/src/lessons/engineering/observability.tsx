@@ -49,36 +49,38 @@ this.logger.verbose()           _logger.LogTrace()`}
 
       <TeacherTask title="结构化日志：不要拼接字符串">
         <p>
-          用消息模板的占位符（如 <code>{"{Username}"}</code>）而不是字符串拼接。这样日志平台能把
-          Username、Email 当成可检索的结构化字段，而不是一段死文本。异常日志把{" "}
+          用消息模板的占位符（如 <code>{"{ProjectId}"}</code>）而不是字符串拼接。这样日志平台能把
+          ProjectId、WorkItemId 当成可检索的结构化字段，而不是一段死文本。异常日志把{" "}
           <code>ex</code> 作为第一个参数传入，会自动包含堆栈。
         </p>
       </TeacherTask>
       <LessonCode
-        code={`public class UserService
+        code={`public class WorkItemService
 {
-    private readonly ILogger<UserService> _logger;
+    private readonly ILogger<WorkItemService> _logger;
 
-    public UserService(ILogger<UserService> logger)
+    public WorkItemService(ILogger<WorkItemService> logger)
     {
         _logger = logger;
     }
 
-    public async Task CreateAsync(User user)
+    public async Task<WorkItemSummaryDto> MoveAsync(string workItemId, WorkItemStatus status, string operatorId)
     {
         // 结构化日志 — 不需要拼接字符串
-        _logger.LogInformation("Creating user {Username} with email {Email}",
-            user.Username, user.Email);
+        _logger.LogInformation("Moving work item {WorkItemId} to {Status} by {OperatorId}",
+            workItemId, status, operatorId);
 
         try
         {
             // ... 业务逻辑
-            _logger.LogInformation("User {UserId} created successfully", user.Id);
+            var item = await MoveCoreAsync(workItemId, status, operatorId);
+            _logger.LogInformation("Work item {WorkItemId} moved to {Status}", item.Id, item.Status);
+            return item;
         }
         catch (Exception ex)
         {
             // 异常日志 — 自动包含堆栈
-            _logger.LogError(ex, "Failed to create user {Username}", user.Username);
+            _logger.LogError(ex, "Failed to move work item {WorkItemId}", workItemId);
             throw;
         }
     }
@@ -139,7 +141,7 @@ dotnet add package Serilog.Sinks.Seq   # 集中日志平台`}
     .Enrich.FromLogContext()
     .Enrich.WithMachineName()        // 机器名
     .Enrich.WithEnvironmentName()    // 环境名（Dev/Prod）
-    .Enrich.WithProperty("Application", "MyApp")  // 应用名
+    .Enrich.WithProperty("Application", "TaskHub")  // 应用名
     .WriteTo.Console(
         outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3} {SourceContext}] {Message:lj}{NewLine}{Exception}")
     .WriteTo.File(
@@ -190,21 +192,21 @@ dotnet add package Serilog.Sinks.Seq   # 集中日志平台`}
     public void Remove(string key) => _cache.Remove(key);
 
     // 带缓存的查询 — 类似 TypeORM 缓存
-    public async Task<User?> GetUserWithCacheAsync(string id)
+    public async Task<ProjectDashboardDto?> GetProjectDashboardWithCacheAsync(string projectId)
     {
-        var cacheKey = $"user:{id}";
+        var cacheKey = $"project:{projectId}:dashboard";
 
         // 先查缓存
-        if (_cache.TryGetValue(cacheKey, out User? cachedUser))
-            return cachedUser;
+        if (_cache.TryGetValue(cacheKey, out ProjectDashboardDto? cachedDashboard))
+            return cachedDashboard;
 
         // 查数据库
-        var user = await _userRepository.GetByIdAsync(id);
+        var dashboard = await _projectQueryService.GetDashboardAsync(projectId);
 
-        if (user != null)
-            _cache.Set(cacheKey, user, TimeSpan.FromMinutes(10)); // 缓存 10 分钟
+        if (dashboard != null)
+            _cache.Set(cacheKey, dashboard, TimeSpan.FromMinutes(5)); // 缓存 5 分钟
 
-        return user;
+        return dashboard;
     }
 }`}
         language="csharp"
@@ -229,39 +231,39 @@ dotnet add package Serilog.Sinks.Seq   # 集中日志平台`}
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = builder.Configuration.GetConnectionString("Redis");
-    options.InstanceName = "MyApp:";  // 前缀隔离
+    options.InstanceName = "TaskHub:";  // 前缀隔离
 });
 
 // 使用
-public class UserService
+public class ProjectDashboardService
 {
     private readonly IDistributedCache _cache;
 
-    public UserService(IDistributedCache cache)
+    public ProjectDashboardService(IDistributedCache cache)
     {
         _cache = cache;
     }
 
-    public async Task<User?> GetWithCacheAsync(string id)
+    public async Task<ProjectDashboardDto?> GetWithCacheAsync(string projectId)
     {
-        var cacheKey = $"user:{id}";
+        var cacheKey = $"project:{projectId}:dashboard";
 
         var cached = await _cache.GetStringAsync(cacheKey);
         if (cached != null)
-            return JsonSerializer.Deserialize<User>(cached);
+            return JsonSerializer.Deserialize<ProjectDashboardDto>(cached);
 
-        var user = await _userRepository.GetByIdAsync(id);
+        var dashboard = await _projectQueryService.GetDashboardAsync(projectId);
 
-        if (user != null)
+        if (dashboard != null)
         {
-            var json = JsonSerializer.Serialize(user);
+            var json = JsonSerializer.Serialize(dashboard);
             await _cache.SetStringAsync(
                 cacheKey,
                 json,
                 new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10) });
         }
 
-        return user;
+        return dashboard;
     }
 }`}
         language="csharp"
@@ -271,21 +273,21 @@ public class UserService
       <h3>健康检查</h3>
       <LessonCode
         code={`dotnet add package AspNetCore.HealthChecks.Uris
-dotnet add package AspNetCore.HealthChecks.SqlServer
+dotnet add package AspNetCore.HealthChecks.NpgSql
 dotnet add package AspNetCore.HealthChecks.Redis`}
         language="bash"
         title="安装健康检查包"
       />
       <p>
-        健康检查按依赖类型安装扩展包：URI 用于外部 HTTP 服务，SqlServer 用于数据库，Redis 用于缓存。装包只是提供检查器，是否检查、失败算降级还是不健康，要在注册时明确配置。
+        健康检查按依赖类型安装扩展包：URI 用于外部 HTTP 服务，NpgSql 用于 TaskHub 的 PostgreSQL 数据库，Redis 用于缓存。装包只是提供检查器，是否检查、失败算降级还是不健康，要在注册时明确配置。
       </p>
       <p>注册时为每个依赖设置失败状态（Degraded / Unhealthy）：</p>
       <LessonCode
         code={`// Program.cs
 builder.Services.AddHealthChecks()
-    .AddSqlServer(
+    .AddNpgSql(
         builder.Configuration.GetConnectionString("Default"),
-        name: "sqlserver",
+        name: "postgresql",
         failureStatus: HealthStatus.Degraded)
     .AddRedis(
         builder.Configuration.GetConnectionString("Redis"),
@@ -320,7 +322,7 @@ app.MapHealthChecks("/health/live", ...);    // 存活检查（最简单）`}
   "status": "Healthy",
   "checks": [
     {
-      "name": "sqlserver",
+      "name": "postgresql",
       "description": null,
       "status": "Healthy",
       "duration": "00:00:00.0023182"
@@ -384,14 +386,16 @@ public class ProfileClient : IProfileClient
       <h4>避免 N+1 查询</h4>
       <LessonCode
         code={`// 错误：循环内查询
-foreach (var user in users)
+foreach (var item in workItems)
 {
-    var roles = await _context.Roles.Where(r => r.UserId == user.Id).ToListAsync(); // N+1!
+    var comments = await _context.WorkItemComments
+        .Where(comment => comment.WorkItemId == item.Id)
+        .ToListAsync(); // N+1!
 }
 
-// 正确：预加载
-var usersWithRoles = await _context.Users
-    .Include(u => u.Roles)
+// 正确：预加载任务评论
+var itemsWithComments = await _context.WorkItems
+    .Include(item => item.Comments)
     .ToListAsync();`}
         language="csharp"
         title="用 Include 预加载"
@@ -405,10 +409,10 @@ public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] in
     if (pageSize < 1 || pageSize > 100)  // 最大 100
         return BadRequest("pageSize 必须在 1-100 之间");
 
-    var users = await _userService.GetAllAsync(page, pageSize);
+    var items = await _workItemService.GetProjectWorkItemsAsync(projectId, page, pageSize);
     return Ok(new {
-        data = users.Data,
-        pagination = new { page, pageSize, total = users.Total }
+        data = items.Data,
+        pagination = new { page, pageSize, total = items.Total }
     });
 }`}
         language="csharp"
@@ -421,33 +425,33 @@ public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] in
       </LessonQuote>
       <LessonCode
         code={`// ✅ 正确
-public async Task<User?> GetByIdAsync(string id)
+public async Task<WorkItem?> GetByIdAsync(string id)
 {
-    return await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
+    return await _context.WorkItems.FirstOrDefaultAsync(item => item.Id == id);
 }
 
 // 短时间 CPU 计算可临时 Task.Run；长任务应放到后台队列或 Worker
-public async Task<UserDto?> GetWithSummaryAsync(string id)
+public async Task<WorkItemSummaryDto?> GetWithSummaryAsync(string id)
 {
-    var user = await GetByIdAsync(id);
-    if (user == null) return null;
+    var item = await GetByIdAsync(id);
+    if (item == null) return null;
 
     // 如果计算很重，不要长期占用请求线程池，应改为后台任务
-    var summary = await Task.Run(() => HeavyCalculation(user));
+    var summary = await Task.Run(() => HeavyCalculation(item));
 
-    return new UserDto { User = user, Summary = summary };
+    return new WorkItemSummaryDto(item.Id, item.ProjectId, item.Title, item.Status, null, item.DueDate);
 }
 
 // ❌ 错误：阻塞调用
-public User GetById(string id)
+public WorkItem GetById(string id)
 {
-    return _context.Users.First(u => u.Id == id); // 阻塞线程
+    return _context.WorkItems.First(item => item.Id == id); // 阻塞线程
 }
 
 // ❌ 错误：.Result
-public async Task<User?> GetByIdAsync(string id)
+public async Task<WorkItem?> GetByIdAsync(string id)
 {
-    return _context.Users.FirstAsync(u => u.Id == id).Result; // 死锁风险！
+    return _context.WorkItems.FirstAsync(item => item.Id == id).Result; // 死锁风险！
 }`}
         language="csharp"
         title="异步正确与错误写法"
@@ -491,7 +495,7 @@ Log.Logger = new LoggerConfiguration()
     .Enrich.FromLogContext()
     .Enrich.WithMachineName()
     .Enrich.WithEnvironmentName()
-    .Enrich.WithProperty("Application", "MyApp")
+    .Enrich.WithProperty("Application", "TaskHub")
     .WriteTo.Console(
         outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
     .WriteTo.File(
@@ -521,22 +525,23 @@ finally
 }
 
 // 使用示例
-public class UserService
+public class WorkItemService
 {
-    private readonly ILogger<UserService> _logger;
+    private readonly ILogger<WorkItemService> _logger;
 
-    public async Task CreateAsync(User user)
+    public async Task MoveAsync(string workItemId, WorkItemStatus status, string operatorId)
     {
-        _logger.LogInformation("创建用户 {Username} {Email}", user.Username, user.Email);
+        _logger.LogInformation("移动任务 {WorkItemId} 到 {Status}，操作人 {OperatorId}",
+            workItemId, status, operatorId);
 
         try
         {
-            await _repository.AddAsync(user);
-            _logger.LogInformation("用户 {UserId} 创建成功", user.Id);
+            await _workItemRepository.MoveAsync(workItemId, status, operatorId);
+            _logger.LogInformation("任务 {WorkItemId} 状态变更成功", workItemId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "创建用户失败 {Username}", user.Username);
+            _logger.LogError(ex, "任务 {WorkItemId} 状态变更失败", workItemId);
             throw;
         }
     }
@@ -550,7 +555,7 @@ public class UserService
               "使用结构化日志模板（{占位符}），不要字符串拼接",
             ],
             reference:
-              "结构化日志的优势：日志平台（如 Seq、ELK）可以把 Username、Email 当成可检索的字段，而不是死文本。异常日志把 ex 作为第一个参数传入会自动包含堆栈。",
+              "结构化日志的优势：日志平台（如 Seq、ELK）可以把 WorkItemId、ProjectId 当成可检索的字段，而不是死文本。异常日志把 ex 作为第一个参数传入会自动包含堆栈。",
           },
           {
             title: "实现内存缓存服务，再切换到 Redis",
@@ -604,12 +609,12 @@ public class CacheService
 }
 
 // 使用示例
-public async Task<User?> GetByIdAsync(string id)
+public async Task<ProjectDashboardDto?> GetDashboardAsync(string projectId)
 {
-    var cacheKey = $"user:{id}";
+    var cacheKey = $"project:{projectId}:dashboard";
     return await _cacheService.GetOrCreateAsync(
         cacheKey,
-        () => _context.Users.FirstOrDefaultAsync(u => u.Id == id),
+        () => _projectQueryService.GetDashboardAsync(projectId),
         TimeSpan.FromMinutes(5));
 }
 
@@ -620,7 +625,7 @@ dotnet add package Microsoft.Extensions.Caching.StackExchangeRedis
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = builder.Configuration.GetConnectionString("Redis");
-    options.InstanceName = "MyApp:";
+    options.InstanceName = "TaskHub:";
 });
 
 // Redis 缓存服务
@@ -685,15 +690,15 @@ public class RedisCacheService
               </p>
             ),
             code: `// 安装包
-dotnet add package AspNetCore.HealthChecks.SqlServer
+dotnet add package AspNetCore.HealthChecks.NpgSql
 dotnet add package AspNetCore.HealthChecks.Redis
 
 // Program.cs
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy(), tags: new[] { "live" })
-    .AddSqlServer(
+    .AddNpgSql(
         builder.Configuration.GetConnectionString("Default")!,
-        name: "sqlserver",
+        name: "postgresql",
         failureStatus: HealthStatus.Degraded,
         tags: new[] { "ready" })
     .AddRedis(
@@ -777,23 +782,25 @@ public class DatabaseHealthCheck : IHealthCheck
             ),
             code: `// ❌ 错误：N+1 查询
 [HttpGet]
-public async Task<IActionResult> GetUsers()
+public async Task<IActionResult> GetWorkItems(string projectId)
 {
-    var users = await _context.Users.ToListAsync();
+    var items = await _context.WorkItems
+        .Where(item => item.ProjectId == projectId)
+        .ToListAsync();
 
-    var result = new List<UserDto>();
-    foreach (var user in users)
+    var result = new List<WorkItemDetailDto>();
+    foreach (var item in items)
     {
-        // 每个用户都查一次数据库 — N+1!
-        var roles = await _context.Roles
-            .Where(r => r.UserId == user.Id)
+        // 每个任务都查一次数据库 — N+1!
+        var comments = await _context.WorkItemComments
+            .Where(comment => comment.WorkItemId == item.Id)
             .ToListAsync();
 
-        result.Add(new UserDto
+        result.Add(new WorkItemDetailDto
         {
-            Id = user.Id,
-            Username = user.Username,
-            Roles = roles.Select(r => r.Name).ToList()
+            Id = item.Id,
+            Title = item.Title,
+            CommentCount = comments.Count
         });
     }
 
@@ -802,27 +809,27 @@ public async Task<IActionResult> GetUsers()
 
 // ✅ 正确：用 Include 预加载
 [HttpGet]
-public async Task<IActionResult> GetUsers()
+public async Task<IActionResult> GetWorkItems(string projectId)
 {
-    var users = await _context.Users
-        .Include(u => u.Roles)  // 一次性加载所有关联
+    var items = await _context.WorkItems
+        .Where(item => item.ProjectId == projectId)
+        .Include(item => item.Comments)  // 一次性加载关联评论
         .ToListAsync();
 
-    var result = users.Select(u => new UserDto
+    var result = items.Select(item => new WorkItemDetailDto
     {
-        Id = u.Id,
-        Username = u.Username,
-        Roles = u.Roles.Select(r => r.Name).ToList()
+        Id = item.Id,
+        Title = item.Title,
+        CommentCount = item.Comments.Count
     });
 
     return Ok(result);
 }
 
 // 多层关联用 ThenInclude
-var users = await _context.Users
-    .Include(u => u.UserRoles)
-        .ThenInclude(ur => ur.Role)
-            .ThenInclude(r => r.Permissions)
+var items = await _context.WorkItems
+    .Include(item => item.Comments)
+        .ThenInclude(comment => comment.Author)
     .ToListAsync();
 
 // 如何排查 N+1
@@ -836,16 +843,16 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 // 2. 看日志中是否有重复的 SELECT 语句
 // 错误示例会输出：
-// SELECT * FROM Users
-// SELECT * FROM Roles WHERE UserId = 1
-// SELECT * FROM Roles WHERE UserId = 2
-// SELECT * FROM Roles WHERE UserId = 3
+// SELECT * FROM WorkItems
+// SELECT * FROM WorkItemComments WHERE WorkItemId = 1
+// SELECT * FROM WorkItemComments WHERE WorkItemId = 2
+// SELECT * FROM WorkItemComments WHERE WorkItemId = 3
 // ...
 
 // 正确示例会输出：
-// SELECT u.*, r.*
-// FROM Users u
-// LEFT JOIN Roles r ON u.Id = r.UserId`,
+// SELECT w.*, c.*
+// FROM WorkItems w
+// LEFT JOIN WorkItemComments c ON w.Id = c.WorkItemId`,
             codeLanguage: "csharp",
             codeTitle: "修复 N+1 查询",
             checkpoints: [

@@ -29,6 +29,12 @@ export const AuthPasswordJwtLesson = ({
         </p>
       </TeacherTask>
 
+      <TeacherTask title="TaskHub 当前状态">
+        <p>
+          TaskHub 已经有用户、项目、项目成员和任务数据模型。本节在这个模型上补注册、登录、密码哈希和 JWT，让后续 Projects / WorkItems API 能真正按当前用户执行。
+        </p>
+      </TeacherTask>
+
       <h3>Authentication vs Authorization</h3>
       <p>这是两个不同的问题，必须先分清：</p>
       <LessonCode
@@ -64,8 +70,7 @@ app.UseAuthorization();`}
 
       <h3>用户模型</h3>
       <p>
-        用 <code>User</code>、<code>Role</code>、<code>Permission</code> 以及关联表建模
-        RBAC，<code>RefreshToken</code> 只存哈希（下一节详述）。
+        TaskHub 先用 <code>User</code> 表达账号，用 <code>ProjectMember</code> 表达项目内角色。平台级角色可以后续补充，但项目权限不要脱离项目成员关系单独判断。
       </p>
       <LessonCode
         code={`public class User
@@ -75,26 +80,29 @@ app.UseAuthorization();`}
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
-    public List<UserRole> UserRoles { get; set; } = new();
+    public List<ProjectMember> ProjectMembers { get; set; } = new();
     public List<RefreshToken> RefreshTokens { get; set; } = new();
 }
 
-public class Role
+public class ProjectMember
 {
-    public string Id { get; set; } = Guid.NewGuid().ToString();
-    public string Code { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
-    public List<RolePermission> Permissions { get; set; } = new();
+    public string ProjectId { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
+    public ProjectRole Role { get; set; } = ProjectRole.Member;
+    public bool IsActive { get; set; } = true;
+
+    public Project Project { get; set; } = null!;
+    public User User { get; set; } = null!;
 }
 
-public class Permission
+public enum ProjectRole
 {
-    public string Id { get; set; } = Guid.NewGuid().ToString();
-    public string Code { get; set; } = string.Empty; // 例如 user:delete
-    public string Name { get; set; } = string.Empty;
+    Owner,
+    Maintainer,
+    Member
 }`}
         language="csharp"
-        title="实体模型（核心部分）"
+        title="TaskHub 认证相关模型"
       />
 
       <h3>密码哈希</h3>
@@ -132,7 +140,7 @@ public class PasswordService
         <code>HttpContext.User</code>。
       </p>
       <LessonCode
-        code="dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer"
+        code="dotnet add TaskHub.Api/TaskHub.Api.csproj package Microsoft.AspNetCore.Authentication.JwtBearer"
         language="bash"
         title="安装 JwtBearer"
       />
@@ -141,8 +149,8 @@ public class PasswordService
       <LessonCode
         code={`{
   "Jwt": {
-    "Issuer": "my-app",
-    "Audience": "my-app-client",
+    "Issuer": "taskhub",
+    "Audience": "taskhub-client",
     "Secret": "replace-with-a-long-random-secret",
     "AccessTokenMinutes": 15,
     "RefreshTokenDays": 7
@@ -202,9 +210,9 @@ builder.Services.AddAuthorization();`}
       />
 
       <h3>签发 Access Token</h3>
-      <p>把 role 和 permission 写入 claims，便于后续授权判断：</p>
+      <p>把用户身份和少量全局 claim 写入 token；项目级权限在具体项目接口里结合 <code>ProjectMember</code> 查询判断，避免把所有项目权限塞进 JWT。</p>
       <LessonCode
-        code={`public string CreateAccessToken(User user, IEnumerable<string> roles, IEnumerable<string> permissions)
+        code={`public string CreateAccessToken(User user)
 {
     var claims = new List<Claim>
     {
@@ -213,9 +221,6 @@ builder.Services.AddAuthorization();`}
         new(ClaimTypes.Name, user.Username),
         new(ClaimTypes.Email, user.Email)
     };
-
-    claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
-    claims.AddRange(permissions.Select(permission => new Claim("permission", permission)));
 
     var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwt.Secret));
     var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -245,9 +250,6 @@ builder.Services.AddAuthorization();`}
         code={`public async Task<LoginResponse> LoginAsync(LoginRequest request)
 {
     var user = await _context.Users
-        .Include(u => u.UserRoles)
-            .ThenInclude(ur => ur.Role)
-                .ThenInclude(r => r.Permissions)
         .FirstOrDefaultAsync(u => u.Email == request.Email);
 
     if (user is null || !user.IsActive)
@@ -256,13 +258,7 @@ builder.Services.AddAuthorization();`}
     if (!_passwordService.Verify(user, request.Password))
         throw new UnauthorizedAccessException("邮箱或密码错误");
 
-    var roles = user.UserRoles.Select(ur => ur.Role.Code);
-    var permissions = user.UserRoles
-        .SelectMany(ur => ur.Role.Permissions)
-        .Select(rp => rp.Permission.Code)
-        .Distinct();
-
-    var accessToken = _tokenService.CreateAccessToken(user, roles, permissions);
+    var accessToken = _tokenService.CreateAccessToken(user);
     var refreshToken = await _tokenService.CreateRefreshTokenAsync(user.Id);
 
     return new LoginResponse(accessToken, refreshToken);
@@ -286,6 +282,12 @@ builder.Services.AddAuthorization();`}
         title="完成密码登录与 JWT 主线"
         onToggleChecklistItem={onToggleChecklistItem}
       />
+
+      <TeacherTask title="Phase 3 项目状态">
+        <p>
+          到这里，TaskHub 已经能完成用户登录、密码哈希校验和 Access Token 签发。下一节会加入 Refresh Token 轮换，并把项目 Owner / Maintainer / Member 的资源级权限接到项目 API 和 SignalR 通知上。
+        </p>
+      </TeacherTask>
     </LessonShell>
   );
 };

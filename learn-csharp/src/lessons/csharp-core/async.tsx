@@ -21,6 +21,12 @@ export const CsharpAsyncLesson = ({
         学完本节后，你应该能用 <code>async/await</code> 编写异步方法，理解 <code>Task</code> 与 Promise 的对应关系，区分 I/O 异步和 CPU 计算，并避免用 <code>.Result</code> 或 <code>.Wait()</code> 阻塞异步操作。
       </p>
 
+      <TeacherTask title="TaskHub 当前状态">
+        <p>
+          前两节已经在 <code>TaskHub.Core</code> 建立了实体、枚举和 DTO。本节补服务接口的异步形状：后续 API、EF Core 和测试都会沿用 <code>Task&lt;T&gt;</code>、<code>CancellationToken</code> 和 <code>Async</code> 命名。
+        </p>
+      </TeacherTask>
+
       <h3>async/await 与 Task</h3>
       <p>
         C# 的异步基础模式和 TS 很像，但底层模型完全不同。先看写法，再理解差异。
@@ -28,18 +34,18 @@ export const CsharpAsyncLesson = ({
 
       <LessonCode
         code={`// 基础模式
-public async Task<User> GetUserAsync(string id)
+public async Task<WorkItemSummaryDto?> GetWorkItemAsync(string id)
 {
-    var response = await httpClient.GetAsync($"/api/users/{id}");
+    var response = await httpClient.GetAsync($"/api/work-items/{id}");
     response.EnsureSuccessStatusCode();
     var json = await response.Content.ReadAsStringAsync();
-    return JsonSerializer.Deserialize<User>(json);
+    return JsonSerializer.Deserialize<WorkItemSummaryDto>(json);
 }
 
 // 并行执行 — 类似 Promise.all
-public async Task<List<User>> GetUsersAsync(string[] ids)
+public async Task<List<WorkItemSummaryDto?>> GetWorkItemsAsync(string[] ids)
 {
-    var tasks = ids.Select(id => GetUserAsync(id)).ToArray();
+    var tasks = ids.Select(id => GetWorkItemAsync(id)).ToArray();
     return (await Task.WhenAll(tasks)).ToList();
 }`}
         language="csharp"
@@ -96,21 +102,28 @@ public async Task<int> ComputeExpensiveAsync(int n)
       </p>
       <LessonCode
         code={`[HttpGet("{id}")]
-public Task<ActionResult<UserDto>> GetById(
+public async Task<ActionResult<WorkItemSummaryDto>> GetById(
     string id,
     CancellationToken cancellationToken)
 {
-    return _userService.GetByIdAsync(id, cancellationToken);
+    var item = await _workItemService.GetByIdAsync(id, cancellationToken);
+    return item is null ? NotFound() : Ok(item);
 }
 
-public async Task<UserDto?> GetByIdAsync(
+public async Task<WorkItemSummaryDto?> GetByIdAsync(
     string id,
     CancellationToken cancellationToken)
 {
-    return await _context.Users
+    return await _context.WorkItems
         .AsNoTracking()
-        .Where(u => u.Id == id)
-        .Select(u => new UserDto(u.Id, u.Username, u.Email))
+        .Where(item => item.Id == id)
+        .Select(item => new WorkItemSummaryDto(
+            item.Id,
+            item.ProjectId,
+            item.Title,
+            item.Status,
+            item.Assignee == null ? null : item.Assignee.Username,
+            item.DueDate))
         .FirstOrDefaultAsync(cancellationToken);
 }`}
         language="csharp"
@@ -168,7 +181,7 @@ public async Task<UserDto?> GetByIdAsync(
         code={`// Func / Action — 内置委托，最常用
 Func<int, int, int> add = (a, b) => a + b;
 Action<string> log = msg => Console.WriteLine(msg);
-Func<string, User> parse = name => new User { Name = name };
+Func<string, WorkItem> createItem = title => new WorkItem(Guid.NewGuid().ToString(), "project-1", title);
 
 int result = add(3, 4);  // 7
 log("hello");`}
@@ -177,14 +190,14 @@ log("hello");`}
       />
 
       <LessonCode
-        code={`public class UserManager
+        code={`public class WorkItemManager
 {
     // 事件声明
-    public event EventHandler<UserChangedEventArgs>? UserChanged;
+    public event EventHandler<WorkItemChangedEventArgs>? WorkItemChanged;
 
-    protected virtual void OnUserChanged(User user, string action)
+    protected virtual void OnWorkItemChanged(WorkItem item, string action)
     {
-        UserChanged?.Invoke(this, new UserChangedEventArgs(user, action));
+        WorkItemChanged?.Invoke(this, new WorkItemChangedEventArgs(item, action));
     }
 }`}
         language="csharp"
@@ -206,6 +219,12 @@ log("hello");`}
         </li>
         <li>为什么 CancellationToken 要从 Controller 一路传到数据库查询？</li>
       </ul>
+
+      <TeacherTask title="TaskHub 本节产物">
+        <p>
+          到这里，C# 核心章节已经为 TaskHub 准备好领域类型、DTO、LINQ 投影和异步服务形状。下一章进入 <code>TaskHub.Api</code>，把这些 Core 类型接到 HTTP Controller、DI 和验证流程里。
+        </p>
+      </TeacherTask>
     </LessonShell>
   );
 };

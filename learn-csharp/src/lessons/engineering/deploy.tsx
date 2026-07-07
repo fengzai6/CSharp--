@@ -116,23 +116,23 @@ EXPOSE 8081
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
-COPY ["MyApp.Api/MyApp.Api.csproj", "MyApp.Api/"]
-COPY ["MyApp.Core/MyApp.Core.csproj", "MyApp.Core/"]
-COPY ["MyApp.Infrastructure/MyApp.Infrastructure.csproj", "MyApp.Infrastructure/"]
-RUN dotnet restore "MyApp.Api/MyApp.Api.csproj"
+COPY ["TaskHub.Api/TaskHub.Api.csproj", "TaskHub.Api/"]
+COPY ["TaskHub.Core/TaskHub.Core.csproj", "TaskHub.Core/"]
+COPY ["TaskHub.Infrastructure/TaskHub.Infrastructure.csproj", "TaskHub.Infrastructure/"]
+RUN dotnet restore "TaskHub.Api/TaskHub.Api.csproj"
 COPY . .
-WORKDIR "/src/MyApp.Api"
-RUN dotnet build "MyApp.Api.csproj" -c Release -o /app/build
+WORKDIR "/src/TaskHub.Api"
+RUN dotnet build "TaskHub.Api.csproj" -c Release -o /app/build
 
 FROM build AS publish
-RUN dotnet publish "MyApp.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "TaskHub.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
 ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
-ENTRYPOINT ["dotnet", "MyApp.Api.dll"]`}
+ENTRYPOINT ["dotnet", "TaskHub.Api.dll"]`}
         language="dockerfile"
         title="多阶段构建 Dockerfile"
       />
@@ -192,7 +192,7 @@ dotnet publish -c Release -r linux-x64 \\
       <h3>普通发布命令</h3>
       <LessonCode
         code={`# 普通发布（非 AOT）
-dotnet publish MyApp.Api/MyApp.Api.csproj -c Release -o ./publish
+dotnet publish TaskHub.Api/TaskHub.Api.csproj -c Release -o ./publish
 
 # 发布 + 自包含（发布产物包含 .NET 运行时，不要求目标机器预装 runtime）
 dotnet publish -c Release -r linux-x64 --self-contained -o ./publish`}
@@ -396,24 +396,24 @@ EXPOSE 8081
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 # 先复制 csproj 文件，利用 Docker 层缓存
-COPY ["MyApp.Api/MyApp.Api.csproj", "MyApp.Api/"]
-COPY ["MyApp.Core/MyApp.Core.csproj", "MyApp.Core/"]
-COPY ["MyApp.Infrastructure/MyApp.Infrastructure.csproj", "MyApp.Infrastructure/"]
-RUN dotnet restore "MyApp.Api/MyApp.Api.csproj"
+COPY ["TaskHub.Api/TaskHub.Api.csproj", "TaskHub.Api/"]
+COPY ["TaskHub.Core/TaskHub.Core.csproj", "TaskHub.Core/"]
+COPY ["TaskHub.Infrastructure/TaskHub.Infrastructure.csproj", "TaskHub.Infrastructure/"]
+RUN dotnet restore "TaskHub.Api/TaskHub.Api.csproj"
 # 复制所有源代码
 COPY . .
-WORKDIR "/src/MyApp.Api"
-RUN dotnet build "MyApp.Api.csproj" -c Release -o /app/build
+WORKDIR "/src/TaskHub.Api"
+RUN dotnet build "TaskHub.Api.csproj" -c Release -o /app/build
 
 FROM build AS publish
-RUN dotnet publish "MyApp.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "TaskHub.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
 ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
-ENTRYPOINT ["dotnet", "MyApp.Api.dll"]`}
+ENTRYPOINT ["dotnet", "TaskHub.Api.dll"]`}
           language="dockerfile"
           title="Dockerfile"
         />
@@ -445,27 +445,27 @@ publish/
         <h4>参考答案</h4>
         <LessonCode
           code={`# 构建镜像
-docker build -t myapp:1.0 .
+docker build -t taskhub:1.0 .
 
 # 查看镜像大小
-docker images myapp:1.0
+docker images taskhub:1.0
 
 # 运行容器
-docker run -d -p 8080:8080 --name myapp-container myapp:1.0
+docker run -d -p 8080:8080 --name taskhub-container taskhub:1.0
 
 # 测试应用
 curl http://localhost:8080/health
 
 # 查看日志
-docker logs myapp-container
+docker logs taskhub-container
 
 # 进入容器检查（确认无 SDK）
-docker exec -it myapp-container sh
+docker exec -it taskhub-container sh
 ls /usr/share/dotnet  # 应该只有运行时，没有 sdk 目录
 
 # 停止并删除容器
-docker stop myapp-container
-docker rm myapp-container`}
+docker stop taskhub-container
+docker rm taskhub-container`}
           language="bash"
           title="Docker 操作命令"
         />
@@ -505,7 +505,7 @@ docker rm myapp-container`}
   </PropertyGroup>
 </Project>`}
           language="xml"
-          title="MyApp.Api.csproj"
+          title="TaskHub.Api.csproj"
         />
 
         <LessonCode
@@ -517,11 +517,11 @@ dotnet publish -c Release -r linux-x64 \\
     -o ./publish/aot
 
 # 查看发布产物
-ls -lh ./publish/aot/MyApp.Api
+ls -lh ./publish/aot/TaskHub.Api
 # 预期：单个原生可执行文件，15-30MB
 
 # 测试启动时间
-time ./publish/aot/MyApp.Api &
+time ./publish/aot/TaskHub.Api &
 # 预期：冷启动 < 100ms`}
           language="bash"
           title="AOT 发布命令"
@@ -529,20 +529,20 @@ time ./publish/aot/MyApp.Api &
 
         <p>
           这段不是为了马上替换普通发布，而是用同一个项目观察 AOT 的产物形态和启动时间。看到单个原生可执行文件，说明产物不再依赖
-          <code>dotnet MyApp.Api.dll</code> 这种运行方式；如果发布失败，优先检查反射、JSON 序列化和第三方库兼容性。
+          <code>dotnet TaskHub.Api.dll</code> 这种运行方式；如果发布失败，优先检查反射、JSON 序列化和第三方库兼容性。
         </p>
 
         <LessonCode
           code={`# AOT Dockerfile
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
-COPY ["MyApp.Api/MyApp.Api.csproj", "MyApp.Api/"]
-COPY ["MyApp.Core/MyApp.Core.csproj", "MyApp.Core/"]
-COPY ["MyApp.Infrastructure/MyApp.Infrastructure.csproj", "MyApp.Infrastructure/"]
-RUN dotnet restore "MyApp.Api/MyApp.Api.csproj"
+COPY ["TaskHub.Api/TaskHub.Api.csproj", "TaskHub.Api/"]
+COPY ["TaskHub.Core/TaskHub.Core.csproj", "TaskHub.Core/"]
+COPY ["TaskHub.Infrastructure/TaskHub.Infrastructure.csproj", "TaskHub.Infrastructure/"]
+RUN dotnet restore "TaskHub.Api/TaskHub.Api.csproj"
 COPY . .
-WORKDIR "/src/MyApp.Api"
-RUN dotnet publish "MyApp.Api.csproj" -c Release -r linux-x64 \\
+WORKDIR "/src/TaskHub.Api"
+RUN dotnet publish "TaskHub.Api.csproj" -c Release -r linux-x64 \\
     -p:PublishAot=true \\
     -p:StripSymbols=true \\
     -o /app/publish
@@ -554,7 +554,7 @@ COPY --from=build /app/publish .
 ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
 # AOT 生成的是原生可执行文件，不是 .dll
-ENTRYPOINT ["./MyApp.Api"]`}
+ENTRYPOINT ["./TaskHub.Api"]`}
           language="dockerfile"
           title="Dockerfile.aot"
         />
@@ -578,24 +578,24 @@ dotnet publish -c Release -r linux-x64 -p:PublishAot=true -o ./publish/aot
 ls -lh ./publish/aot
 
 # 构建两个镜像对比
-docker build -t myapp:normal -f Dockerfile .
-docker build -t myapp:aot -f Dockerfile.aot .
+docker build -t taskhub:normal -f Dockerfile .
+docker build -t taskhub:aot -f Dockerfile.aot .
 
 # 对比镜像大小
-docker images | grep myapp
+docker images | grep taskhub
 # 预期：
-# myapp:normal  250-300MB
-# myapp:aot     30-50MB
+# taskhub:normal  250-300MB
+# taskhub:aot     30-50MB
 
 # 对比启动时间
-docker run -d -p 8080:8080 --name myapp-normal myapp:normal
-docker logs myapp-normal  # 查看启动日志时间戳
+docker run -d -p 8080:8080 --name taskhub-normal taskhub:normal
+docker logs taskhub-normal  # 查看启动日志时间戳
 
-docker run -d -p 8081:8080 --name myapp-aot myapp:aot
-docker logs myapp-aot  # 对比启动速度
+docker run -d -p 8081:8080 --name taskhub-aot taskhub:aot
+docker logs taskhub-aot  # 对比启动速度
 
 # 压测对比内存占用
-docker stats myapp-normal myapp-aot`}
+docker stats taskhub-normal taskhub-aot`}
           language="bash"
           title="对比测试"
         />
@@ -611,7 +611,7 @@ docker stats myapp-normal myapp-aot`}
         <LessonCode
           code={`// 使用 JsonSerializerContext 支持 AOT
 [JsonSerializable(typeof(LoginDto))]
-[JsonSerializable(typeof(UserDto))]
+[JsonSerializable(typeof(WorkItemSummaryDto))]
 public partial class AppJsonSerializerContext : JsonSerializerContext { }
 
 // Program.cs 中配置

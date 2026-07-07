@@ -33,6 +33,12 @@ export const EfDbContextLesson = ({
         </p>
       </TeacherTask>
 
+      <TeacherTask title="TaskHub 当前状态">
+        <p>
+          前面已经完成 Projects / WorkItems API 的接口形状。本节把这些业务对象落到 <code>TaskHub.Infrastructure</code>：创建 <code>TaskHubDbContext</code>、实体配置和第一批迁移。
+        </p>
+      </TeacherTask>
+
       <h3>与 TypeORM 的对照</h3>
       <LessonTable
         headers={["概念", "TypeORM", "EF Core"]}
@@ -52,20 +58,31 @@ export const EfDbContextLesson = ({
       <p>EF Core 通过 NuGet 安装，按数据库选择对应的 provider：</p>
 
       <LessonCode
-        code={`# 安装 NuGet 包
-dotnet add package Microsoft.EntityFrameworkCore.SqlServer
-dotnet add package Microsoft.EntityFrameworkCore.Tools
-# 如果使用 PostgreSQL
-dotnet add package Npgsql.EntityFrameworkCore.PostgreSQL`}
+        code={`# 安装到 Infrastructure：数据库 provider 和 EF Core 运行时
+dotnet add TaskHub.Infrastructure/TaskHub.Infrastructure.csproj package Npgsql.EntityFrameworkCore.PostgreSQL
+
+# 安装到 Api：设计期迁移工具通常由启动项目参与执行
+dotnet add TaskHub.Api/TaskHub.Api.csproj package Microsoft.EntityFrameworkCore.Design`}
         language="bash"
         title="安装 EF Core"
       />
 
       <p>
         这里的包分两类：数据库 provider 负责把 EF Core 查询翻译成具体数据库的 SQL，
-        <code>Microsoft.EntityFrameworkCore.Tools</code> 提供 <code>dotnet ef</code>{" "}
-        迁移命令。实际项目只选一个数据库 provider，例如 SQL Server 或 PostgreSQL，不需要两个都装。
+        <code>Microsoft.EntityFrameworkCore.Design</code> 让启动项目能参与设计期迁移。真正执行 <code>dotnet ef</code>{" "}
+        命令还需要安装 <code>dotnet-ef</code> 工具。实际项目只选一个数据库 provider，例如 SQL Server 或 PostgreSQL，不需要两个都装。
       </p>
+
+      <LessonCode
+        code={`# 如果本机还没有 dotnet ef 命令，先安装工具
+dotnet tool install --global dotnet-ef
+
+# 或在仓库内使用本地 tool manifest
+dotnet new tool-manifest
+dotnet tool install dotnet-ef`}
+        language="bash"
+        title="安装 dotnet-ef 工具"
+      />
 
       <h3>DbContext — 数据库上下文</h3>
       <p>
@@ -77,17 +94,17 @@ dotnet add package Npgsql.EntityFrameworkCore.PostgreSQL`}
       <LessonCode
         code={`using Microsoft.EntityFrameworkCore;
 
-public class ApplicationDbContext : DbContext
+public class TaskHubDbContext : DbContext
 {
-    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+    public TaskHubDbContext(DbContextOptions<TaskHubDbContext> options)
         : base(options) { }
 
     // DbSet — 每个 DbSet 对应一个表
     public DbSet<User> Users => Set<User>();
-    public DbSet<Role> Roles => Set<Role>();
-    public DbSet<Group> Groups => Set<Group>();
-    public DbSet<GroupMember> GroupMembers => Set<GroupMember>();
-    public DbSet<Permission> Permissions => Set<Permission>();
+    public DbSet<Project> Projects => Set<Project>();
+    public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
+    public DbSet<WorkItem> WorkItems => Set<WorkItem>();
+    public DbSet<WorkItemComment> WorkItemComments => Set<WorkItemComment>();
 
     // 重写配置 — 替代 TypeORM 的 @Entity 装饰器
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -95,14 +112,17 @@ public class ApplicationDbContext : DbContext
         base.OnModelCreating(modelBuilder);
 
         // 实体配置
-        modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(TaskHubDbContext).Assembly);
 
         // 全局查询过滤器（类似软删除）
         modelBuilder.Entity<User>()
             .HasQueryFilter(u => u.IsActive);
 
-        modelBuilder.Entity<GroupMember>()
-            .HasQueryFilter(gm => gm.Group.IsActive);
+        modelBuilder.Entity<Project>()
+            .HasQueryFilter(project => project.ArchivedAt == null);
+
+        modelBuilder.Entity<WorkItem>()
+            .HasQueryFilter(item => item.DeletedAt == null);
     }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
@@ -113,7 +133,7 @@ public class ApplicationDbContext : DbContext
     }
 }`}
         language="csharp"
-        title="ApplicationDbContext"
+        title="TaskHubDbContext"
       />
 
       <LessonQuote>
@@ -145,16 +165,13 @@ public class User : BaseEntity
     public string Username { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
-    public string? Nickname { get; set; }
-    public string? Avatar { get; set; }
-    public List<SpecialRole> SpecialRoles { get; set; } = new();
     public bool IsActive { get; set; } = true;
 
-    // 导航属性 — 替代 TypeORM 的 @ManyToMany 等
-    public List<UserRole> UserRoles { get; set; } = new();
-    public List<GroupMembership> GroupMemberships { get; set; } = new();
+    public List<ProjectMember> ProjectMembers { get; set; } = new();
+    public List<WorkItem> AssignedWorkItems { get; set; } = new();
+    public List<WorkItemComment> Comments { get; set; } = new();
 
-    public string DisplayName => Nickname ?? Username;
+    public string DisplayName => Username;
 
     public override void Touch()
     {
@@ -162,13 +179,41 @@ public class User : BaseEntity
     }
 }
 
-public enum SpecialRole
+public class Project : BaseEntity
 {
-    SuperAdmin,
-    PlatformAdmin
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public DateTime? ArchivedAt { get; set; }
+
+    public List<ProjectMember> Members { get; set; } = new();
+    public List<WorkItem> WorkItems { get; set; } = new();
+
+    public override void Touch()
+    {
+        UpdatedAt = DateTime.UtcNow;
+    }
+}
+
+public class WorkItem : BaseEntity
+{
+    public string ProjectId { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public WorkItemStatus Status { get; set; } = WorkItemStatus.Todo;
+    public string? AssigneeId { get; set; }
+    public DateTime? DueDate { get; set; }
+
+    public Project Project { get; set; } = null!;
+    public User? Assignee { get; set; }
+    public List<WorkItemComment> Comments { get; set; } = new();
+
+    public override void Touch()
+    {
+        UpdatedAt = DateTime.UtcNow;
+    }
 }`}
         language="csharp"
-        title="BaseEntity 与 User 实体"
+        title="BaseEntity 与 TaskHub 核心实体"
       />
 
       <TeacherTask title="对照 TypeORM 理解">
@@ -187,26 +232,26 @@ public enum SpecialRole
 
       <LessonCode
         code={`// EF Core 自动追踪实体的变更状态
-var user = _context.Users.First(u => u.Id == "123");
-user.Username = "newName";  // EF 已追踪到变化
+var item = _context.WorkItems.First(item => item.Id == "123");
+item.Status = WorkItemStatus.InProgress;  // EF 已追踪到变化
 
 // 查看变更状态
-foreach (var entry in _context.ChangeTracker.Entries<User>())
+foreach (var entry in _context.ChangeTracker.Entries<WorkItem>())
 {
     Console.WriteLine($"State: {entry.State}");       // Added/Modified/Deleted/Unchanged
-    Console.WriteLine($"Property: {entry.Property(u => u.Username).IsModified}");
-    Console.WriteLine($"Original: {entry.Property(u => u.Username).OriginalValue}");
-    Console.WriteLine($"Current: {entry.Property(u => u.Username).CurrentValue}");
+    Console.WriteLine($"Property: {entry.Property(item => item.Status).IsModified}");
+    Console.WriteLine($"Original: {entry.Property(item => item.Status).OriginalValue}");
+    Console.WriteLine($"Current: {entry.Property(item => item.Status).CurrentValue}");
 }
 
 // 保存所有变更
 await _context.SaveChangesAsync();
 
 // 手动标记状态
-_context.Users.Update(user);        // Modified
-_context.Users.Add(newUser);        // Added
-_context.Users.Remove(user);        // Deleted
-_context.Entry(user).State = EntityState.Detached; // 停止追踪`}
+_context.WorkItems.Update(item);        // Modified
+_context.WorkItems.Add(newItem);        // Added
+_context.WorkItems.Remove(item);        // Deleted
+_context.Entry(item).State = EntityState.Detached; // 停止追踪`}
         language="csharp"
         title="Change Tracker"
       />
@@ -228,20 +273,24 @@ _context.Entry(user).State = EntityState.Detached; // 停止追踪`}
 
       <LessonCode
         code={`# 创建迁移
-dotnet ef migrations add AddUsersAndRolesTables
-dotnet ef migrations add AddGroupTreeStructure
+dotnet ef migrations add AddTaskHubCoreTables \
+    --project TaskHub.Infrastructure \
+    --startup-project TaskHub.Api
+dotnet ef migrations add AddWorkItemComments \
+    --project TaskHub.Infrastructure \
+    --startup-project TaskHub.Api
 
 # 应用迁移到数据库
-dotnet ef database update
+dotnet ef database update --project TaskHub.Infrastructure --startup-project TaskHub.Api
 
 # 回滚迁移
-dotnet ef database update 0      # 回滚到初始状态
-dotnet ef database update AddUsersAndRolesTables  # 回滚到指定迁移
+dotnet ef database update 0 --project TaskHub.Infrastructure --startup-project TaskHub.Api
+dotnet ef database update AddTaskHubCoreTables --project TaskHub.Infrastructure --startup-project TaskHub.Api
 
 # 从已有数据库反向生成 DbContext 和实体（Database First）
-dotnet ef dbcontext scaffold "Host=localhost;Database=myapp;Username=postgres;Password=postgres" \
+dotnet ef dbcontext scaffold "Host=localhost;Database=taskhub;Username=postgres;Password=postgres" \
     Npgsql.EntityFrameworkCore.PostgreSQL \
-    --context ApplicationDbContext \
+    --context TaskHubDbContext \
     --output-dir Models/Entities \
     --context-dir Data`}
         language="bash"
@@ -266,7 +315,7 @@ dotnet ef dbcontext scaffold "Host=localhost;Database=myapp;Username=postgres;Pa
         completedChecklistIds={completedChecklistIds}
         description={
           <p>
-            已能创建 <code>ApplicationDbContext</code>、定义 <code>DbSet</code>、注册
+            已能创建 <code>TaskHubDbContext</code>、定义 <code>DbSet</code>、注册
             DbContext，并跑通一次迁移命令。
           </p>
         }
@@ -284,7 +333,7 @@ dotnet ef dbcontext scaffold "Host=localhost;Database=myapp;Username=postgres;Pa
 
       <TeacherTask title="Phase 2 主线任务">
         <p>
-          在复刻项目中完成 Phase 2：接入 EF Core + PostgreSQL，创建 DbContext 和
+          在 TaskHub 中完成 Phase 2：接入 EF Core + PostgreSQL，创建 DbContext 和
           Migration，跑通第一次 <code>dotnet ef database update</code>。
         </p>
       </TeacherTask>

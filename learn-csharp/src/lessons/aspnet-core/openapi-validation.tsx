@@ -23,27 +23,31 @@ export const AspnetOpenApiValidationLesson = ({
         的适用边界，配置 OpenAPI 文档和 Swagger UI，并按合理的文件夹结构组织项目。
       </p>
 
+      <TeacherTask title="TaskHub 当前状态">
+        <p>
+          上一节已经有 Projects / WorkItems 的 Controller + Service 主线。本节给创建项目、创建任务、更新任务状态这些入口补验证和 OpenAPI 描述，让接口契约可以被前端和测试稳定复用。
+        </p>
+      </TeacherTask>
+
       <h3>数据验证</h3>
       <h4>方式一：Data Annotations</h4>
       <p>类似 NestJS 的 class-validator，用属性标注在 DTO 字段上：</p>
 
       <LessonCode
-        code={`public class CreateUserDto
+        code={`public class CreateWorkItemRequest
 {
-    [Required(ErrorMessage = "用户名不能为空")]
-    [StringLength(50, MinimumLength = 3)]
-    public string Username { get; set; } = string.Empty;
+    [Required(ErrorMessage = "项目 ID 不能为空")]
+    public string ProjectId { get; set; } = string.Empty;
 
     [Required]
-    [EmailAddress]
-    public string Email { get; set; } = string.Empty;
+    [StringLength(120, MinimumLength = 2)]
+    public string Title { get; set; } = string.Empty;
 
-    [Required]
-    [StringLength(100, MinimumLength = 8)]
-    public string Password { get; set; } = string.Empty;
+    [StringLength(2000)]
+    public string? Description { get; set; }
 
-    [Phone]
-    public string? Phone { get; set; }
+    public string? AssigneeId { get; set; }
+    public DateTime? DueDate { get; set; }
 }`}
         language="csharp"
         title="Data Annotations"
@@ -61,8 +65,8 @@ export const AspnetOpenApiValidationLesson = ({
       </p>
 
       <LessonCode
-        code={`dotnet add package FluentValidation
-dotnet add package FluentValidation.AspNetCore`}
+        code={`dotnet add TaskHub.Api/TaskHub.Api.csproj package FluentValidation
+dotnet add TaskHub.Api/TaskHub.Api.csproj package FluentValidation.AspNetCore`}
         language="bash"
         title="安装 FluentValidation"
       />
@@ -76,42 +80,29 @@ dotnet add package FluentValidation.AspNetCore`}
       <LessonCode
         code={`using FluentValidation;
 
-public class CreateUserDtoValidator : AbstractValidator<CreateUserDto>
+public class CreateWorkItemRequestValidator : AbstractValidator<CreateWorkItemRequest>
 {
-    public CreateUserDtoValidator()
+    public CreateWorkItemRequestValidator()
     {
-        RuleFor(x => x.Username)
+        RuleFor(x => x.ProjectId)
             .NotEmpty()
-            .MinimumLength(3)
-            .MaximumLength(50)
-            .WithMessage("用户名长度应在 3-50 之间")
-            .Must(BeUniqueUsername)
-            .WithMessage("用户名已被注册");
+            .WithMessage("项目 ID 不能为空");
 
-        RuleFor(x => x.Email)
+        RuleFor(x => x.Title)
             .NotEmpty()
-            .EmailAddress()
-            .Must(BeUniqueEmail)
-            .WithMessage("邮箱已被注册");
+            .MinimumLength(2)
+            .MaximumLength(120)
+            .WithMessage("任务标题长度应在 2-120 之间");
 
-        RuleFor(x => x.Password)
-            .NotEmpty()
-            .MinimumLength(8)
-            .Matches(@"[A-Z]").WithMessage("密码必须包含大写字母")
-            .Matches(@"[a-z]").WithMessage("密码必须包含小写字母")
-            .Matches(@"\\d").WithMessage("密码必须包含数字");
+        RuleFor(x => x.Description)
+            .MaximumLength(2000)
+            .When(x => x.Description is not null);
 
         // 跨字段验证
         RuleFor(x => x)
-            .Must(x => x.Password != x.Username)
-            .WithMessage("密码不能与用户名相同");
+            .Must(x => x.DueDate is null || x.DueDate.Value > DateTime.UtcNow)
+            .WithMessage("截止时间必须晚于当前时间");
     }
-
-    private bool BeUniqueUsername(string username) =>
-        !_userRepository.UsernameExists(username);
-
-    private bool BeUniqueEmail(string email) =>
-        !_userRepository.EmailExists(email);
 }`}
         language="csharp"
         title="FluentValidation 验证器"
@@ -154,21 +145,21 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 // 路由分组（类似 NestJS 的 GlobalPrefix + Controller prefix）
-var authGroup = app.MapGroup("/api/auth");
-var userGroup = app.MapGroup("/api/users").RequireAuthorization();
+var projectsGroup = app.MapGroup("/api/projects").RequireAuthorization();
+var workItemsGroup = app.MapGroup("/api/work-items").RequireAuthorization();
 
-// 登录 — 类似 NestJS @Post('login')
-authGroup.MapPost("/login", async (LoginDto dto, IAuthService auth) =>
+// 创建项目 — 类似 NestJS @Post()
+projectsGroup.MapPost("/", async (CreateProjectRequest request, IProjectService projects) =>
 {
-    var result = await auth.LoginAsync(dto);
-    return Results.Ok(result);
+    var project = await projects.CreateAsync(request);
+    return Results.Created($"/api/projects/{project.Id}", project);
 });
 
-// 获取用户 — 类似 NestJS @Get(':id')
-userGroup.MapGet("/{id}", async (string id, IUserService service) =>
+// 获取任务 — 类似 NestJS @Get(':id')
+workItemsGroup.MapGet("/{id}", async (string id, IWorkItemService service) =>
 {
-    var user = await service.GetByIdAsync(id);
-    return user is null ? Results.NotFound() : Results.Ok(user);
+    var item = await service.GetByIdAsync(id);
+    return item is null ? Results.NotFound() : Results.Ok(item);
 });
 
 app.Run();`}
@@ -200,13 +191,13 @@ app.Run();`}
 
       <LessonCode
         code={`// 替代 NestJS Guard
-app.MapGet("/users/{id}", async (string id, IUserService service) =>
+app.MapGet("/work-items/{id}", async (string id, IWorkItemService service) =>
     await service.GetByIdAsync(id))
     .AddEndpointFilter(async (context, next) =>
     {
         // 类似 canActivate()
-        var userId = context.Arguments["id"] as string;
-        if (userId == null)
+        var workItemId = context.Arguments["id"] as string;
+        if (workItemId == null)
             return Results.BadRequest("Invalid ID");
         return await next(context);
     });`}
@@ -254,9 +245,9 @@ if (app.Environment.IsDevelopment())
 {
     c.SwaggerDoc("v1", new OpenApiInfo
     {
-        Title = "My API",
+        Title = "TaskHub API",
         Version = "v1",
-        Description = "基于 ASP.NET Core 的后端 API"
+        Description = "任务协作系统后端 API"
     });
 
     // JWT 认证支持
@@ -282,15 +273,15 @@ if (app.Environment.IsDevelopment())
 
       <LessonCode
         code={`/// <summary>
-/// 用户登录
+/// 创建任务
 /// </summary>
-[HttpPost("login")]
-[ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
-[ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
-public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginDto dto)
+[HttpPost]
+[ProducesResponseType(typeof(WorkItemSummaryDto), StatusCodes.Status201Created)]
+[ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+public async Task<ActionResult<WorkItemSummaryDto>> Create([FromBody] CreateWorkItemRequest request)
 {
-    var response = await _authService.LoginAsync(dto);
-    return Ok(response);
+    var item = await _workItemService.CreateAsync(request);
+    return CreatedAtAction(nameof(GetById), new { id = item.Id }, item);
 }`}
         language="csharp"
         title="ProducesResponseType"
@@ -318,7 +309,7 @@ public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginDto dto)
         title="分层结构"
       />
 
-      <h4>方式二：Feature-First 结构（推荐用于复刻项目）</h4>
+      <h4>方式二：Feature-First 结构（可作为后续重构选择）</h4>
       <p>
         与 NestJS 的 <code>modules/user/</code> 类似，更扁平、更自包含：
       </p>
@@ -335,10 +326,10 @@ public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginDto dto)
 │   │   ├── AuthService.cs               # 业务逻辑
 │   │   ├── AuthValidators.cs            # FluentValidation
 │   │   └── AuthMappers.cs               # 对象映射
-│   └── Users/
-│       ├── UserEndpoints.cs
-│       ├── UserService.cs
-│       └── UserValidators.cs
+│   └── WorkItems/
+│       ├── WorkItemEndpoints.cs
+│       ├── WorkItemService.cs
+│       └── WorkItemValidators.cs
 ├── Data/
 └── Shared/`}
         language="text"
@@ -347,9 +338,7 @@ public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginDto dto)
 
       <TeacherTask title="老师提示">
         <p>
-          复刻项目时用<strong>方式二（Feature-First）</strong>，更贴近你的 NestJS
-          Modules 思路：每个 Feature 是一个独立单元，包含路由、逻辑、验证和映射。DTO
-          推荐用 <code>record</code>。
+          TaskHub 主线当前保持 Api/Core/Infrastructure 三项目结构，早期先用 Controller 降低迁移成本。Feature-First 可以作为单个项目内部组织方式参考，但不要因此打破 Core 不依赖外层的边界。
         </p>
       </TeacherTask>
 
@@ -371,6 +360,12 @@ public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginDto dto)
         <li>OpenAPI 和 Swagger UI 是同一件事吗？</li>
         <li>FluentValidation 相比 Data Annotations 在跨字段验证上有什么优势？</li>
       </ul>
+
+      <TeacherTask title="Phase 1 项目状态">
+        <p>
+          到这里，TaskHub 的 Projects / WorkItems API 已具备 Controller、Service、DTO、FluentValidation 和 OpenAPI 描述。下一章会把这些接口背后的数据从示例逻辑推进到 EF Core 持久化。
+        </p>
+      </TeacherTask>
     </LessonShell>
   );
 };

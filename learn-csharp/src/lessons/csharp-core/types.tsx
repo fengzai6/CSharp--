@@ -23,6 +23,12 @@ export const CsharpTypesLesson = ({
         和 Task 思维。
       </p>
 
+      <TeacherTask title="TaskHub 当前状态">
+        <p>
+          你已经有可运行的 <code>TaskHub.Api</code> 和干净的 <code>TaskHub.Core</code>。本节开始往 <code>TaskHub.Core</code> 放第一批领域类型：用户、项目、任务和任务状态。
+        </p>
+      </TeacherTask>
+
       <TeacherTask title="老师提示">
         <p>
           你已经有后端经验，所以不要在 <code>if</code>、<code>for</code>
@@ -145,35 +151,43 @@ Console.WriteLine(list1.Count); // 输出 4（list1 也变了！）`}
 
       <h3>类与接口</h3>
       <LessonCode
-        code={`public class User
+        code={`public class WorkItem
 {
-    private string _name;
+    private string _title = string.Empty;
 
     // 属性（公共访问口）
-    public string Name
+    public string Title
     {
-        get => _name;
-        set => _name = value.ToUpper();
+        get => _title;
+        set => _title = value.Trim();
     }
 
     // C# 9+ 不可变属性（init 只能在构造时设置）
     public string Id { get; init; }
+    public string ProjectId { get; init; }
+    public string? AssigneeId { get; set; }
+    public WorkItemStatus Status { get; private set; } = WorkItemStatus.Todo;
 
-    public User(string name) => Name = name;
+    public WorkItem(string id, string projectId, string title)
+    {
+        Id = id;
+        ProjectId = projectId;
+        Title = title;
+    }
 
     // 虚方法（允许子类重写）
-    public virtual string Greet() => $"Hello, I'm {Name}";
+    public virtual void MoveTo(WorkItemStatus nextStatus) => Status = nextStatus;
 }`}
         language="csharp"
-        title="类 = 引用类型"
+        title="TaskHub 任务实体 = 引用类型"
       />
 
       <LessonCode
         code={`// 接口 = 纯契约，不包含字段、构造函数
-public interface IUserRepository
+public interface IWorkItemRepository
 {
-    Task<User> GetByIdAsync(string id);
-    Task<List<User>> GetAllAsync();
+    Task<WorkItem?> GetByIdAsync(string id, CancellationToken cancellationToken);
+    Task<List<WorkItem>> GetByProjectAsync(string projectId, CancellationToken cancellationToken);
 }
 
 // C# 8+ 默认接口实现
@@ -200,23 +214,25 @@ public interface ILogger
 
       <h3>枚举与标志</h3>
       <LessonCode
-        code={`public enum Role { Guest = 0, Member = 1, Admin = 2 }
+        code={`public enum WorkItemStatus { Todo = 0, InProgress = 1, Done = 2, Archived = 3 }
+
+public enum ProjectRole { Owner = 0, Maintainer = 1, Member = 2 }
 
 // 带 [Flags] 的标志枚举（可组合）
 [Flags]
-public enum Permission
+public enum ProjectPermission
 {
     None = 0,
-    Read = 1,       // 0001
-    Write = 2,      // 0010
-    Delete = 4,     // 0100
-    Execute = 8     // 1000
+    ReadWorkItems = 1,       // 0001
+    CreateWorkItems = 2,     // 0010
+    ManageMembers = 4,       // 0100
+    ArchiveProject = 8       // 1000
 }
 
-Permission userPerm = Permission.Read | Permission.Write;
-bool canRead = (userPerm & Permission.Read) == Permission.Read;`}
+ProjectPermission memberPerm = ProjectPermission.ReadWorkItems | ProjectPermission.CreateWorkItems;
+bool canCreate = (memberPerm & ProjectPermission.CreateWorkItems) == ProjectPermission.CreateWorkItems;`}
         language="csharp"
-        title="枚举"
+        title="TaskHub 状态、角色与权限枚举"
       />
       <p>
         你的 TS 项目里用 <code>as const</code> 替代 enum，C# 有原生的{" "}
@@ -248,6 +264,18 @@ public class CacheService<TKey, TValue>
           在运行期是<strong>不同类型</strong>，可以有类型特定的优化。
         </p>
       </TeacherTask>
+
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已能在 <code>TaskHub.Core</code> 中区分 Entity、接口、枚举和权限标志的职责，并知道这些类型后续会被 API、EF Core 和授权策略复用。
+          </p>
+        }
+        id="csharp-types-taskhub-core-types"
+        title="建立 TaskHub.Core 基础类型"
+        onToggleChecklistItem={onToggleChecklistItem}
+      />
     </LessonShell>
   );
 };

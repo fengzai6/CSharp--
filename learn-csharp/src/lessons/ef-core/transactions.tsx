@@ -19,124 +19,107 @@ export const EfTransactionsLesson = ({
     <LessonShell>
       <h3>本章你要掌握什么</h3>
       <p>
-        学完本节后，你应该能用 EF Core 写事务、悲观锁、乐观并发、软删除和批量操作，
-        知道什么时候用 <code>ExecuteUpdateAsync()</code> /{" "}
-        <code>ExecuteDeleteAsync()</code> 替代"循环逐条 SaveChanges"，
-        并能创建迁移、生成生产迁移脚本。
+        学完本节后，你应该能在 TaskHub 中处理多步骤一致性操作：任务状态流转、批量关闭任务、项目归档、乐观并发、软删除和迁移脚本。重点是知道什么时候用事务，什么时候用 <code>ExecuteUpdateAsync()</code> 替代循环逐条 <code>SaveChangesAsync()</code>。
       </p>
 
-      <TeacherTask title="老师提示">
+      <TeacherTask title="TaskHub 当前状态">
         <p>
-          一个高频反模式是在循环里逐条 <code>SaveChangesAsync()</code>，
-          每次都往返一次数据库。能用批量操作就批量，能在一个事务里完成的就别拆开。
-          这两点直接决定写入路径的性能。
+          现在 TaskHub 已经有项目、成员、任务和评论关系。本节把写入路径补完整：任务状态变更需要记录操作日志，项目归档需要同时关闭未完成任务，批量更新要减少数据库往返。
         </p>
       </TeacherTask>
 
-      <h3>基本事务</h3>
+      <h3>基本事务：任务状态流转</h3>
       <p>
-        用 <code>Database.BeginTransactionAsync()</code> 开事务，
-        成功 <code>CommitAsync()</code>，异常 <code>RollbackAsync()</code>。
-        对应 TypeORM 的 <code>manager.transaction()</code>。
+        状态流转通常不只是改一个字段，还要校验成员权限、更新任务、写入操作记录。这类多步写入应放进同一个事务。
       </p>
 
       <LessonCode
-        code={`public async Task UpdateUserRolesAsync(string userId, List<string> roleCodes)
+        code={`public async Task<WorkItemSummaryDto> MoveWorkItemAsync(
+    string workItemId,
+    WorkItemStatus nextStatus,
+    string operatorId)
 {
-    // 对应 TypeORM 的 manager.transaction()
     await using var transaction = await _context.Database.BeginTransactionAsync();
 
     try
     {
-        // 1. 查询用户
-        var user = await _context.Users
-            .Include(u => u.UserRoles)
-            .FirstOrDefaultAsync(u => u.Id == userId);
+        var item = await _context.WorkItems
+            .Include(item => item.Project)
+            .FirstOrDefaultAsync(item => item.Id == workItemId);
 
-        if (user == null)
-            throw new NotFoundException("User not found");
+        if (item is null)
+            throw new NotFoundException("任务不存在");
 
-        // 2. 获取目标角色
-        var roles = await _context.Roles
-            .Where(r => roleCodes.Contains(r.Code))
-            .ToListAsync();
+        var isMember = await _context.ProjectMembers.AnyAsync(member =>
+            member.ProjectId == item.ProjectId &&
+            member.UserId == operatorId &&
+            member.IsActive);
 
-        // 3. 替换角色 — 删除旧的，添加新的
-        user.UserRoles.Clear();
-        foreach (var role in roles)
+        if (!isMember)
+            throw new UnauthorizedAccessException("不是项目成员");
+
+        item.Status = nextStatus;
+        item.Touch();
+
+        _context.WorkItemComments.Add(new WorkItemComment
         {
-            user.UserRoles.Add(new UserRole
-            {
-                UserId = userId,
-                RoleId = role.Id
-            });
-        }
+            WorkItemId = item.Id,
+            AuthorId = operatorId,
+            Content = $"状态变更为 {nextStatus}"
+        });
 
-        // 4. 保存
         await _context.SaveChangesAsync();
-
-        // 5. 提交
         await transaction.CommitAsync();
+
+        return new WorkItemSummaryDto(item.Id, item.ProjectId, item.Title, item.Status, null, item.DueDate);
     }
     catch
     {
-        // 6. 回滚
         await transaction.RollbackAsync();
         throw;
     }
 }`}
         language="csharp"
-        title="基本事务"
+        title="任务状态流转事务"
       />
 
       <h3>悲观锁</h3>
       <p>
-        需要在事务内独占某行时，用 <code>FromSqlRaw</code> 加{" "}
-        <code>FOR UPDATE</code> 锁定行，对应 TypeORM 的{" "}
-        <code>lock: {`{ mode: 'pessimistic_write' }`}</code>。
+        某些冲突频繁的操作可以在事务内锁定一行。例如归档项目时先锁定项目，避免同时有人继续创建任务或重复归档。
       </p>
 
       <LessonCode
-        code={`public async Task SetGroupLeaderAsync(string groupId, string userId)
+        code={`public async Task ArchiveProjectAsync(string projectId, string operatorId)
 {
     await using var transaction = await _context.Database.BeginTransactionAsync();
 
     try
     {
-        // 锁定 Group 行 — 对应 lock: { mode: 'pessimistic_write' }
-        var group = await _context.Groups
-            .FromSqlRaw("SELECT * FROM \\"groups\\" WHERE id = {0} FOR UPDATE", groupId)
+        var project = await _context.Projects
+            .FromSqlRaw("SELECT * FROM Projects WHERE Id = {0} FOR UPDATE", projectId)
             .FirstOrDefaultAsync();
 
-        if (group == null)
-            throw new NotFoundException("Group not found");
+        if (project is null)
+            throw new NotFoundException("项目不存在");
 
-        // 1. 找到旧 Leader
-        var oldLeader = await _context.GroupMembers
-            .Include(gm => gm.User)
-            .FirstOrDefaultAsync(gm =>
-                gm.GroupId == groupId &&
-                gm.Role == MemberRole.Leader);
+        var isOwner = await _context.ProjectMembers.AnyAsync(member =>
+            member.ProjectId == projectId &&
+            member.UserId == operatorId &&
+            member.Role == ProjectRole.Owner);
 
-        // 2. 降级旧 Leader
-        if (oldLeader != null)
-        {
-            oldLeader.Role = MemberRole.Member;
-            await _context.SaveChangesAsync();
-        }
+        if (!isOwner)
+            throw new UnauthorizedAccessException("只有 Owner 可以归档项目");
 
-        // 3. 设置新 Leader
-        var newMember = await _context.GroupMembers
-            .FirstOrDefaultAsync(gm =>
-                gm.GroupId == groupId &&
-                gm.UserId == userId);
+        project.ArchivedAt = DateTime.UtcNow;
+        project.Touch();
 
-        if (newMember == null)
-            throw new NotFoundException("Member not found in group");
+        await _context.WorkItems
+            .Where(item => item.ProjectId == projectId && item.Status != WorkItemStatus.Done)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(item => item.Status, WorkItemStatus.Archived)
+                .SetProperty(item => item.UpdatedAt, DateTime.UtcNow));
 
-        newMember.Role = MemberRole.Leader;
         await _context.SaveChangesAsync();
-
         await transaction.CommitAsync();
     }
     catch
@@ -146,42 +129,35 @@ export const EfTransactionsLesson = ({
     }
 }`}
         language="csharp"
-        title="悲观锁"
+        title="项目归档与悲观锁"
       />
+
+      <LessonQuote>
+        <code>FOR UPDATE</code> 是 PostgreSQL / MySQL 常见写法，SQL Server 通常用 <code>WITH (UPDLOCK, ROWLOCK)</code>。课程主线用 PostgreSQL 表达，换数据库时语法要调整。
+      </LessonQuote>
 
       <h3>乐观并发</h3>
       <p>
-        冲突不频繁时，优先用乐观并发：读取时带上版本字段，保存时 EF Core
-        会检查版本是否仍匹配。如果中途被别人改过，<code>SaveChangesAsync()</code>{" "}
-        会抛出 <code>DbUpdateConcurrencyException</code>。
+        普通任务编辑更适合乐观并发：读取时带版本，保存时检查版本。如果别人已经改过，就提示用户刷新后重试。
       </p>
+
       <LessonCode
-        code={`// SQL Server 常用 rowversion
-public class Group
+        code={`public class WorkItem
 {
     public string Id { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
 
     [Timestamp]
     public byte[] RowVersion { get; set; } = [];
 }
 
-// PostgreSQL 可使用 xmin 作为并发 token
-public class GroupConfiguration : IEntityTypeConfiguration<Group>
+public async Task RenameWorkItemAsync(string id, string title)
 {
-    public void Configure(EntityTypeBuilder<Group> builder)
-    {
-        builder.UseXminAsConcurrencyToken();
-    }
-}
+    var item = await _context.WorkItems.FirstOrDefaultAsync(item => item.Id == id);
+    if (item is null)
+        throw new NotFoundException("任务不存在");
 
-public async Task RenameGroupAsync(string id, string name)
-{
-    var group = await _context.Groups.FirstOrDefaultAsync(g => g.Id == id);
-    if (group is null)
-        throw new NotFoundException("Group not found");
-
-    group.Name = name;
+    item.Title = title;
 
     try
     {
@@ -189,412 +165,177 @@ public async Task RenameGroupAsync(string id, string name)
     }
     catch (DbUpdateConcurrencyException)
     {
-        throw new ConflictException("数据已被其他人修改，请刷新后重试");
+        throw new ConflictException("任务已被其他人修改，请刷新后重试");
     }
 }`}
         language="csharp"
-        title="乐观并发控制"
+        title="任务编辑的乐观并发"
       />
-      <LessonQuote>
-        选择规则：冲突频繁、必须串行的操作用悲观锁；大多数普通编辑场景用乐观并发，失败后提示用户刷新或重试。
-      </LessonQuote>
 
       <h3>软删除</h3>
       <p>
-        EF Core 没有内置软删除，常见做法是标记字段 + 全局查询过滤器：
-        删除时只改 <code>IsActive</code> / <code>DeletedAt</code>，
-        查询时被过滤器自动排除。
+        TaskHub 中任务删除通常应可恢复，因此用 <code>DeletedAt</code> 做软删除，再通过全局查询过滤器让普通查询自动排除。
       </p>
 
       <LessonCode
-        code={`public async Task DeleteSoftAsync(string id)
+        code={`public async Task DeleteWorkItemSoftAsync(string id)
 {
-    var user = await _context.Users.FindAsync(id);
-    if (user == null)
-        throw new NotFoundException("User not found");
+    var item = await _context.WorkItems.FindAsync(id);
+    if (item is null)
+        throw new NotFoundException("任务不存在");
 
-    user.IsActive = false;
-    user.DeletedAt = DateTime.UtcNow;
-    user.Touch();
+    item.DeletedAt = DateTime.UtcNow;
+    item.Touch();
 
     await _context.SaveChangesAsync();
+}
+
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    modelBuilder.Entity<WorkItem>()
+        .HasQueryFilter(item => item.DeletedAt == null);
 }`}
         language="csharp"
-        title="软删除"
+        title="任务软删除"
       />
 
       <LessonQuote>
-        关键差异：TypeORM 有 <code>softRemove()</code> 方法。EF Core
-        没有内置软删除，但通过全局查询过滤器 + 手动标记实现，更透明。注意后台管理或恢复场景需要用{" "}
-        <code>IgnoreQueryFilters()</code> 忽略过滤器。
+        全局过滤器会影响所有普通查询。后台回收站、恢复任务、审计导出这类场景需要显式使用 <code>IgnoreQueryFilters()</code>。
       </LessonQuote>
 
-      <h3>批量操作（替代循环逐个更新）</h3>
+      <h3>批量操作</h3>
       <p>
-        <code>ExecuteDeleteAsync()</code> / <code>ExecuteUpdateAsync()</code>{" "}
-        直接翻译成一条 SQL，不需要先加载实体，适合大批量写入；
-        <code>AddRangeAsync</code> 批量插入。
+        <code>ExecuteUpdateAsync()</code> / <code>ExecuteDeleteAsync()</code> 直接翻译成 SQL，不加载实体，不走 Change Tracker，适合批量关闭任务、批量归档、批量清理。
       </p>
 
       <LessonCode
-        code={`// 批量删除
-await _context.Users.Where(u => ids.Contains(u.Id)).ExecuteDeleteAsync();
+        code={`// 批量关闭某个项目中已过期的任务
+await _context.WorkItems
+    .Where(item => item.ProjectId == projectId)
+    .Where(item => item.DueDate < DateTime.UtcNow)
+    .Where(item => item.Status != WorkItemStatus.Done)
+    .ExecuteUpdateAsync(setters => setters
+        .SetProperty(item => item.Status, WorkItemStatus.Archived)
+        .SetProperty(item => item.UpdatedAt, DateTime.UtcNow));
 
-// 批量更新
-await _context.Users
-    .Where(u => ids.Contains(u.Id))
-    .ExecuteUpdateAsync(s => s.SetProperty(u => u.IsActive, false)
-                            .SetProperty(u => u.UpdatedAt, DateTime.UtcNow));
-
-// 批量插入
-await _context.Users.AddRangeAsync(usersToCreate);
-await _context.SaveChangesAsync();
-
-// TS 开发者对照：这替代了循环 save 操作
-// NestJS: for (const item of items) { await repo.save(item); }
-// EF Core: await repo.AddRangeAsync(items); await repo.SaveChangesAsync();`}
+// 批量插入项目成员
+await _context.ProjectMembers.AddRangeAsync(membersToAdd);
+await _context.SaveChangesAsync();`}
         language="csharp"
-        title="批量操作"
+        title="批量关闭任务与批量添加成员"
       />
 
       <TeacherTask title="应用价值">
         <p>
-          像 <code>GroupsService</code> 的 <code>addGroupMembers</code>{" "}
-          批量添加成员这种场景，用批量操作可以大幅减少数据库往返次数。
-          注意 <code>ExecuteUpdateAsync</code> 不经过 Change Tracker，
-          也不会触发实体上的业务逻辑（如 <code>Touch()</code>），所以要在表达式里显式设置{" "}
-          <code>UpdatedAt</code>。
+          像批量关闭任务、批量添加项目成员这种场景，用批量操作可以大幅减少数据库往返次数。注意 <code>ExecuteUpdateAsync</code> 不经过 Change Tracker，也不会触发实体上的业务逻辑，所以要在表达式里显式设置 <code>UpdatedAt</code>。
         </p>
       </TeacherTask>
 
-      <h4>批量更新 vs 加载后修改</h4>
       <LessonTable
         headers={["维度", "ExecuteUpdateAsync()", "加载实体后修改"]}
         rows={[
           ["是否加载实体", "否", "是"],
           ["是否走 Change Tracker", "否", "是"],
           ["数据库往返", "一条 SQL", "查询 + 更新"],
-          ["适用场景", "大批量、不需要业务逻辑", "需要校验或触发实体逻辑"],
+          ["适用场景", "大批量、不需要实体逻辑", "需要校验或触发实体逻辑"],
         ]}
-      />
-
-      <h3>性能优化</h3>
-      <p>
-        只读用 <code>AsNoTracking()</code>，只取需要的字段用投影，
-        预加载避免 N+1，性能敏感场景可用 <code>FromSqlRaw</code> 原生 SQL。
-      </p>
-
-      <LessonCode
-        code={`// 只读查询 — 禁用变更追踪，提升性能
-var users = await _context.Users
-    .AsNoTracking()
-    .ToListAsync();
-
-// 只读取需要的字段 — 投影
-var userNames = await _context.Users
-    .AsNoTracking()
-    .Select(u => u.Username)
-    .ToListAsync();
-
-// 原生 SQL — 性能敏感场景
-var result = await _context.Users
-    .FromSqlRaw("""
-        SELECT u.*, r.name as role_name
-        FROM users u
-        JOIN user_roles ur ON u.id = ur.user_id
-        JOIN roles r ON ur.role_id = r.id
-        WHERE u.active = true
-    """)
-    .ToListAsync();`}
-        language="csharp"
-        title="性能优化"
       />
 
       <h3>迁移</h3>
       <p>
-        改完模型后用 <code>migrations add</code> 生成迁移，
-        <code>database update</code> 应用，必要时回滚到指定迁移。
+        改完模型后用 <code>migrations add</code> 生成迁移，<code>database update</code> 应用。TaskHub 是多项目结构，命令要明确迁移项目和启动项目。
       </p>
 
       <LessonCode
         code={`# 创建迁移
-dotnet ef migrations add AddUsersAndRolesTables
+dotnet ef migrations add AddProjectMembersAndWorkItems \
+    --project TaskHub.Infrastructure \
+    --startup-project TaskHub.Api
 
 # 应用迁移到数据库
-dotnet ef database update
+dotnet ef database update \
+    --project TaskHub.Infrastructure \
+    --startup-project TaskHub.Api
 
-# 回滚迁移
-dotnet ef database update 0      # 回滚到初始状态
-dotnet ef database update AddUsersAndRolesTables  # 回滚到指定迁移`}
+# 回滚到指定迁移
+dotnet ef database update AddTaskHubCoreTables \
+    --project TaskHub.Infrastructure \
+    --startup-project TaskHub.Api`}
         language="bash"
-        title="迁移命令"
+        title="TaskHub 迁移命令"
       />
 
-      <p>
-        迁移命令要按顺序理解：先用 <code>migrations add</code>{" "}
-        把模型变化固化成迁移文件，再用 <code>database update</code>{" "}
-        改数据库。回滚命令会让数据库退回到指定迁移状态，适合本地学习和开发环境排错；生产环境不要随手回滚。
-      </p>
-
       <h4>生产迁移脚本</h4>
-      <p>
-        本地学习可以直接 <code>database update</code>。生产环境更推荐生成 SQL
-        脚本，审查后由 CI/CD 或数据库迁移任务执行，避免应用启动时多个实例同时改库。
-      </p>
       <LessonCode
-        code={`# 生成幂等迁移脚本，适合 CI/CD 多环境执行
-dotnet ef migrations script --idempotent -o ./artifacts/migrations.sql
-
-# 指定起止迁移生成脚本
-dotnet ef migrations script AddUsersAndRolesTables AddGroupTreeStructure \
-    -o ./artifacts/add-group-tree.sql`}
+        code={`dotnet ef migrations script AddTaskHubCoreTables AddProjectMembersAndWorkItems \
+    --idempotent \
+    --project TaskHub.Infrastructure \
+    --startup-project TaskHub.Api \
+    -o ./artifacts/taskhub-migrations.sql`}
         language="bash"
         title="生产迁移脚本"
       />
 
-      <p>
-        <code>--idempotent</code> 会生成可重复执行的 SQL：脚本会检查目标数据库已经执行到哪一个迁移，再补上缺失部分。指定起止迁移则适合审查某一次版本升级到底会执行哪些 SQL。
-      </p>
-
       <h3>常见误区</h3>
       <ul>
         <li>在循环里逐条 <code>SaveChangesAsync()</code>，每次往返一次数据库。</li>
-        <li>需要原子性的多步写入没有放进同一个事务。</li>
-        <li>用了全局软删除过滤器，却忘记后台管理或恢复场景要 <code>IgnoreQueryFilters()</code>。</li>
+        <li>任务状态变更和操作记录没有放进同一个事务，导致数据不一致。</li>
+        <li>用了全局软删除过滤器，却忘记回收站或恢复场景要 <code>IgnoreQueryFilters()</code>。</li>
       </ul>
 
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={
           <p>
-            已能把多步写入放进事务，理解批量更新与 Change Tracker 的边界，并会生成/回滚迁移。
+            已能把任务状态流转、项目归档和批量关闭任务放到合适的事务与批量操作中，并会为 TaskHub 生成迁移脚本。
           </p>
         }
         id="ef-transactions-main"
-        title="完成事务、批量操作与迁移主线"
+        title="完成 TaskHub 事务、批量操作与迁移主线"
         onToggleChecklistItem={onToggleChecklistItem}
       />
 
       <h3>阶段验收问题</h3>
       <ul>
         <li><code>ExecuteUpdateAsync()</code> 和加载实体后修改有什么区别？</li>
-        <li>悲观锁在 EF Core 里怎么实现？对应 TypeORM 的什么写法？</li>
+        <li>任务状态变更为什么适合放进事务？</li>
         <li>乐观并发和悲观锁分别适合什么场景？</li>
         <li>生产环境为什么更推荐先生成迁移脚本再执行？</li>
         <li>软删除用全局过滤器时有哪些边界情况？</li>
       </ul>
 
       <LessonStep
-        title="实战：事务与迁移"
+        title="实战：TaskHub 事务与迁移"
         steps={[
           {
-            title: "实现事务操作替换用户角色",
-            content: (
-              <p>
-                实现 <code>UpdateUserRolesAsync</code> 方法，在事务中先删除用户的所有旧角色，再添加新角色，确保操作的原子性。
-              </p>
-            ),
-            code: `public async Task UpdateUserRolesAsync(string userId, List<string> newRoleIds)
-{
-    using var transaction = await _context.Database.BeginTransactionAsync();
-    try
-    {
-        // 删除旧角色
-        var oldRoles = await _context.UserRoles
-            .Where(ur => ur.UserId == userId)
-            .ToListAsync();
-        _context.UserRoles.RemoveRange(oldRoles);
-
-        // 添加新角色
-        var newRoles = newRoleIds.Select(roleId => new UserRole
-        {
-            UserId = userId,
-            RoleId = roleId
-        });
-        await _context.UserRoles.AddRangeAsync(newRoles);
-
-        await _context.SaveChangesAsync();
-        await transaction.CommitAsync();
-    }
-    catch
-    {
-        await transaction.RollbackAsync();
-        throw;
-    }
-}`,
-            codeLanguage: "csharp",
-            codeTitle: "事务操作",
-            checkpoints: [
-              "用 BeginTransactionAsync 开启事务",
-              "先删除旧角色，再添加新角色",
-              "SaveChangesAsync 后 CommitAsync",
-              "异常时 RollbackAsync 回滚",
-            ],
-            reference:
-              "事务确保多个操作要么全部成功，要么全部失败。如果只 SaveChangesAsync 不 CommitAsync，事务不会提交。",
-          },
-          {
-            title: "实现悲观锁",
-            content: (
-              <p>
-                用 <code>FromSqlRaw</code> 执行 SELECT FOR UPDATE 实现悲观锁，防止并发修改群组领导者。
-              </p>
-            ),
-            code: `public async Task SetGroupLeaderAsync(string groupId, string newLeaderId)
-{
-    using var transaction = await _context.Database.BeginTransactionAsync();
-
-    // 悲观锁：锁定行直到事务结束
-    var group = await _context.Groups
-        .FromSqlRaw("SELECT * FROM Groups WHERE Id = {0} FOR UPDATE", groupId)
-        .FirstOrDefaultAsync();
-
-    if (group == null) throw new NotFoundException();
-
-    group.LeaderId = newLeaderId;
-    await _context.SaveChangesAsync();
-    await transaction.CommitAsync();
-}`,
-            codeLanguage: "csharp",
-            codeTitle: "悲观锁",
-            checkpoints: [
-              "用 FROM SqlRaw 执行 SELECT FOR UPDATE",
-              "锁定行后，其他事务会等待",
-              "修改后 SaveChangesAsync + CommitAsync",
-            ],
-            reference:
-              "FOR UPDATE 是 PostgreSQL/MySQL 的语法，SQL Server 用 WITH (UPDLOCK, ROWLOCK)。悲观锁适合冲突频繁的场景，否则用乐观锁（版本号）。",
-          },
-          {
-            title: "添加软删除过滤器",
-            content: (
-              <p>
-                在 <code>OnModelCreating</code> 中添加全局查询过滤器，自动过滤已删除的实体。恢复时用 <code>IgnoreQueryFilters</code>。
-              </p>
-            ),
-            code: `// BaseEntity
-public abstract class BaseEntity
-{
-    public string Id { get; set; }
-    public bool IsDeleted { get; set; }
-}
-
-// OnModelCreating
-protected override void OnModelCreating(ModelBuilder modelBuilder)
-{
-    modelBuilder.Entity<User>()
-        .HasQueryFilter(u => !u.IsDeleted);
-    modelBuilder.Entity<Group>()
-        .HasQueryFilter(g => !g.IsDeleted);
-}
-
-// 恢复已删除实体（需要 IgnoreQueryFilters）
-public async Task<User?> GetDeletedUserAsync(string id)
-{
-    return await _context.Users
-        .IgnoreQueryFilters()
-        .FirstOrDefaultAsync(u => u.Id == id && u.IsDeleted);
-}`,
-            codeLanguage: "csharp",
-            codeTitle: "软删除过滤器",
-            checkpoints: [
-              "HasQueryFilter 添加全局过滤器",
-              "所有查询自动过滤 IsDeleted = true",
-              "用 IgnoreQueryFilters 查询已删除实体",
-            ],
-            reference:
-              "软删除适合需要恢复数据的场景。硬删除（物理删除）数据无法恢复，但节省存储空间。",
-          },
-          {
-            title: "批量更新用 ExecuteUpdateAsync",
-            content: (
-              <p>
-                用 <code>ExecuteUpdateAsync</code> 直接生成 UPDATE SQL，避免加载实体、循环修改、SaveChanges 的低效模式。
-              </p>
-            ),
-            code: `// ❌ 低效写法（N+1 问题）
-var users = await _context.Users.Where(u => u.IsActive).ToListAsync();
-foreach (var user in users)
-{
-    user.LastLoginAt = DateTime.UtcNow;
-}
+            title: "实现任务状态流转事务",
+            content: <p>在事务中完成成员校验、任务状态更新和操作记录写入。</p>,
+            code: `await using var transaction = await _context.Database.BeginTransactionAsync();
+// 1. 查询任务
+// 2. 校验 ProjectMember
+// 3. 更新 WorkItem.Status
+// 4. 写入 WorkItemComment 操作记录
 await _context.SaveChangesAsync();
-
-// ✅ 高效写法（一条 UPDATE SQL）
-await _context.Users
-    .Where(u => u.IsActive)
-    .ExecuteUpdateAsync(setters => setters
-        .SetProperty(u => u.LastLoginAt, DateTime.UtcNow));`,
+await transaction.CommitAsync();`,
             codeLanguage: "csharp",
-            codeTitle: "批量更新",
-            checkpoints: [
-              "ExecuteUpdateAsync 直接生成 UPDATE SQL",
-              "不需要 ToListAsync 和 SaveChangesAsync",
-              "性能大幅提升（一次数据库往返 vs N+1 次）",
-            ],
-            reference:
-              "ExecuteUpdateAsync 是 EF Core 7+ 的特性，类似 TypeORM 的 update().set().execute()。适合批量更新简单字段，不适合复杂业务逻辑。",
+            codeTitle: "状态流转事务步骤",
+            checkpoints: ["开启事务", "校验项目成员", "更新任务状态", "写入操作记录", "提交或回滚"],
           },
           {
-            title: "创建和回滚迁移",
-            content: (
-              <p>
-                用 <code>dotnet ef migrations</code> 创建迁移、应用到数据库，并回滚到指定迁移。
-              </p>
-            ),
-            code: `# 创建迁移
-dotnet ef migrations add AddSoftDelete
-
-# 应用到数据库
-dotnet ef database update
-
-# 查看所有迁移
-dotnet ef migrations list
-
-# 回滚到指定迁移
-dotnet ef database update PreviousMigrationName
-
-# 移除最后一个迁移（未应用的）
-dotnet ef migrations remove`,
-            codeLanguage: "bash",
-            codeTitle: "迁移管理",
-            checkpoints: [
-              "migrations add 生成迁移文件",
-              "database update 应用迁移",
-              "回滚时指定目标迁移名称",
-              "remove 只能移除未应用的迁移",
-            ],
-            reference:
-              "迁移文件存储在 Migrations 文件夹。生产环境建议在 CI/CD 中自动应用迁移，不要手动执行。",
+            title: "批量关闭过期任务",
+            content: <p>使用 <code>ExecuteUpdateAsync</code> 关闭某项目中过期且未完成的任务。</p>,
+            code: `await _context.WorkItems
+    .Where(item => item.ProjectId == projectId)
+    .Where(item => item.DueDate < DateTime.UtcNow)
+    .Where(item => item.Status != WorkItemStatus.Done)
+    .ExecuteUpdateAsync(setters => setters
+        .SetProperty(item => item.Status, WorkItemStatus.Archived)
+        .SetProperty(item => item.UpdatedAt, DateTime.UtcNow));`,
+            codeLanguage: "csharp",
+            codeTitle: "批量关闭任务",
+            checkpoints: ["不先 ToListAsync", "不循环 SaveChangesAsync", "显式设置 UpdatedAt"],
           },
         ]}
-        conclusion={
-          <div className="space-y-2">
-            <p className="font-semibold text-teal-900">
-              ✅ 恭喜！你已经掌握了 EF Core 的事务、锁和迁移。
-            </p>
-            <p>
-              <strong>💡 要点回顾：</strong>
-            </p>
-            <ul className="list-inside list-disc space-y-1 text-sm">
-              <li>
-                事务确保多操作原子性，异常时回滚
-              </li>
-              <li>
-                悲观锁用 FOR UPDATE，适合冲突频繁场景
-              </li>
-              <li>
-                软删除用全局过滤器，恢复时用 IgnoreQueryFilters
-              </li>
-              <li>
-                ExecuteUpdateAsync 批量更新，避免 N+1
-              </li>
-            </ul>
-            <p className="text-sm">
-              <strong>🎯 验收标准：</strong>能实现事务操作、配置软删除、批量更新、管理迁移。
-            </p>
-          </div>
-        }
       />
     </LessonShell>
   );

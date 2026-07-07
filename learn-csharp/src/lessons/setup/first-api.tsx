@@ -17,32 +17,30 @@ export const SetupFirstApiLesson = ({
     <LessonShell>
       <h3>本节你要掌握什么</h3>
       <p>
-        学完本节后，你应该能创建并运行一个最小的 Web API 项目，访问 Swagger API 文档，安装 NuGet 包，并理解 <code>.csproj</code> 文件的包引用机制。
+        学完本节后，你应该能继续运行上一节创建的 <code>TaskHub.Api</code>，访问 Swagger API 文档，给指定项目安装 NuGet 包，并理解 <code>.csproj</code> 文件的包引用机制。
       </p>
 
-      <h3>最小 Web API 验收</h3>
-      <p>创建并运行一个 Web API 项目：</p>
+      <h3>运行已有 TaskHub.Api</h3>
+      <p>
+        上一节已经创建了 <code>TaskHub.Api</code>，这一节不要再新建第二个 Web API。回到 <code>TaskHub</code> 根目录，直接运行已有入口项目：
+      </p>
 
       <LessonCode
-        code={`dotnet new webapi -n Todo.Api
-cd Todo.Api
-dotnet run`}
+        code={`cd TaskHub
+dotnet run --project TaskHub.Api`}
         language="bash"
-        title="创建并运行 Web API"
+        title="运行已有 Web API"
       />
 
       <p>
-        这三步分别对应“生成项目”“进入项目目录”“启动开发服务器”。
-        <code>dotnet new webapi</code> 会按模板生成 <code>.csproj</code>、
-        <code>Program.cs</code> 和示例 API；<code>dotnet run</code>{" "}
-        会编译并启动 Kestrel，终端输出的监听地址就是后面访问 Swagger 的依据。
+        <code>dotnet run --project</code> 会指定要运行的 <code>.csproj</code>，所以你可以一直停留在 Solution 根目录执行命令。这样后续安装包、构建、测试都围绕同一个 TaskHub 工作区，不会把课程拆成多个互不相干的项目。
       </p>
 
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={
           <p>
-            已创建并运行 <code>Todo.Api</code>，记录终端输出的实际监听地址。
+            已从 <code>TaskHub</code> 根目录运行 <code>TaskHub.Api</code>，记录终端输出的实际监听地址。
           </p>
         }
         id="setup-first-api-run"
@@ -71,16 +69,18 @@ dotnet run`}
       </LessonQuote>
 
       <h3>NuGet 包</h3>
-      <p>NuGet 对应 Node.js 生态里的 npm。安装包：</p>
+      <p>
+        NuGet 对应 Node.js 生态里的 npm。多项目 Solution 中要明确把包安装到哪个 <code>.csproj</code>，例如先给 <code>TaskHub.Api</code> 安装后面会用到的 FluentValidation：
+      </p>
 
       <LessonCode
-        code="dotnet add package FluentValidation"
+        code="dotnet add TaskHub.Api/TaskHub.Api.csproj package FluentValidation"
         language="bash"
         title="安装 NuGet 包"
       />
 
       <p>
-        <code>dotnet add package</code> 会把包引用写入当前项目的 <code>.csproj</code>{" "}
+        <code>dotnet add ... package</code> 会把包引用写入指定项目的 <code>.csproj</code>{" "}
         文件，并尝试还原依赖。它类似 <code>npm install</code> 写入{" "}
         <code>package.json</code>，但 .NET 记录的是 <code>PackageReference</code>。
       </p>
@@ -90,7 +90,7 @@ dotnet run`}
         description={
           <p>
             已安装一个 NuGet 包，并在 <code>.csproj</code> 中看到对应的
-            <code>PackageReference</code>。
+            <code>PackageReference</code>。确认这次写入的是 <code>TaskHub.Api.csproj</code>。
           </p>
         }
         id="setup-first-api-nuget"
@@ -116,7 +116,7 @@ dotnet run`}
         会自动 restore；手动执行它主要用于排查包还原问题。
       </p>
 
-      <LessonCode code="dotnet restore" language="bash" title="还原 NuGet 包" />
+      <LessonCode code="dotnet restore TaskHub.sln" language="bash" title="还原 NuGet 包" />
 
       <TeacherTask title="对照 NestJS 理解">
         <p>
@@ -134,9 +134,16 @@ dotnet run`}
 
       <h3>阶段验收问题</h3>
       <ul>
+        <li>为什么本节不应该再执行 <code>dotnet new webapi</code>？</li>
         <li>NuGet 包安装后会写入哪个文件？</li>
         <li>API 文档页面打不开时，你会按什么顺序排查？</li>
       </ul>
+
+      <TeacherTask title="Phase 0 项目状态">
+        <p>
+          到这里，TaskHub 已经具备三项目骨架、正确项目引用、可运行的 <code>TaskHub.Api</code> 入口，以及第一个写入 <code>TaskHub.Api.csproj</code> 的 NuGet 包引用。下一章会在 <code>TaskHub.Core</code> 中开始补业务模型。
+        </p>
+      </TeacherTask>
     </LessonShell>
   );
 };

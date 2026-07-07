@@ -27,17 +27,17 @@ export const SetupSolutionLesson = ({
       </p>
 
       <LessonCode
-        code={`mkdir MyApp
-cd MyApp
-dotnet new sln -n MyApp
+        code={`mkdir TaskHub
+cd TaskHub
+dotnet new sln -n TaskHub
 
-dotnet new webapi -n MyApp.Api
-dotnet new classlib -n MyApp.Core
-dotnet new classlib -n MyApp.Infrastructure
+dotnet new webapi -n TaskHub.Api
+dotnet new classlib -n TaskHub.Core
+dotnet new classlib -n TaskHub.Infrastructure
 
-dotnet sln add MyApp.Api/MyApp.Api.csproj
-dotnet sln add MyApp.Core/MyApp.Core.csproj
-dotnet sln add MyApp.Infrastructure/MyApp.Infrastructure.csproj`}
+dotnet sln add TaskHub.Api/TaskHub.Api.csproj
+dotnet sln add TaskHub.Core/TaskHub.Core.csproj
+dotnet sln add TaskHub.Infrastructure/TaskHub.Infrastructure.csproj`}
         language="bash"
         title="创建解决方案与多项目"
       />
@@ -52,7 +52,7 @@ dotnet sln add MyApp.Infrastructure/MyApp.Infrastructure.csproj`}
         headers={["命令", "作用"]}
         rows={[
           ["mkdir / cd", "创建并进入解决方案根目录"],
-          ["dotnet new sln -n MyApp", "生成 MyApp.sln，用来管理多个项目"],
+          ["dotnet new sln -n TaskHub", "生成 TaskHub.sln，用来管理多个项目"],
           ["dotnet new webapi", "生成 HTTP 入口项目，放 Program.cs 和 API 端点"],
           ["dotnet new classlib", "生成类库项目，放业务层或基础设施层代码"],
           ["dotnet sln add", "把 .csproj 注册到 .sln，方便统一构建和 IDE 展示"],
@@ -75,11 +75,11 @@ dotnet sln add MyApp.Infrastructure/MyApp.Infrastructure.csproj`}
       <h4>推荐初学结构</h4>
 
       <LessonCode
-        code={`MyApp/
-├── MyApp.sln
-├── MyApp.Api/              # HTTP API、Program.cs、Controller/Endpoint
-├── MyApp.Core/             # 业务模型、接口、纯业务逻辑
-└── MyApp.Infrastructure/   # EF Core、Redis、外部服务实现`}
+        code={`TaskHub/
+├── TaskHub.sln
+├── TaskHub.Api/              # HTTP API、Program.cs、Controller/Endpoint
+├── TaskHub.Core/             # 业务模型、接口、纯业务逻辑
+└── TaskHub.Infrastructure/   # EF Core、Redis、外部服务实现`}
         language="text"
         title="项目结构"
       />
@@ -87,9 +87,9 @@ dotnet sln add MyApp.Infrastructure/MyApp.Infrastructure.csproj`}
       <h4>项目引用</h4>
 
       <LessonCode
-        code={`dotnet add MyApp.Api/MyApp.Api.csproj reference MyApp.Core/MyApp.Core.csproj
-dotnet add MyApp.Api/MyApp.Api.csproj reference MyApp.Infrastructure/MyApp.Infrastructure.csproj
-dotnet add MyApp.Infrastructure/MyApp.Infrastructure.csproj reference MyApp.Core/MyApp.Core.csproj`}
+        code={`dotnet add TaskHub.Api/TaskHub.Api.csproj reference TaskHub.Core/TaskHub.Core.csproj
+dotnet add TaskHub.Api/TaskHub.Api.csproj reference TaskHub.Infrastructure/TaskHub.Infrastructure.csproj
+dotnet add TaskHub.Infrastructure/TaskHub.Infrastructure.csproj reference TaskHub.Core/TaskHub.Core.csproj`}
         language="bash"
         title="建立项目引用关系"
       />
@@ -179,7 +179,7 @@ Core 不依赖其他项目`}
 
       <TeacherTask title="Phase 0 主线任务">
         <p>
-          在复刻项目中完成 Phase 0：使用 <code>dotnet new sln</code> 和{" "}
+          在 TaskHub 主线项目中完成 Phase 0：使用 <code>dotnet new sln</code> 和{" "}
           <code>dotnet new webapi</code> / <code>classlib</code> 创建
           Api/Core/Infrastructure 三层项目结构，建立正确的项目引用关系。
         </p>

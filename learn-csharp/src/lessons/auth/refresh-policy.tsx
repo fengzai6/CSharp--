@@ -22,6 +22,12 @@ export const AuthRefreshPolicyLesson = ({
         处理角色、权限以及资源级授权。
       </p>
 
+      <TeacherTask title="TaskHub 当前状态">
+        <p>
+          上一节已经完成登录和 Access Token。本节继续在 TaskHub 的 <code>ProjectMember</code> 模型上实现 Refresh Token 轮换、项目角色策略和资源级授权。
+        </p>
+      </TeacherTask>
+
       <TeacherTask title="老师提示">
         <p>
           只用角色做所有权限判断会导致业务权限难扩展。角色（Role）描述身份，权限（Permission）描述具体能力，复杂场景再用
@@ -65,71 +71,46 @@ export const AuthRefreshPolicyLesson = ({
         不要明文保存到数据库；存储的是哈希，明文只在创建时返回一次。
       </LessonQuote>
 
-      <h3>Role 授权</h3>
-      <p>角色授权用 Policy 包装，便于在 Controller 上声明：</p>
-      <LessonCode
-        code={`builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("AdminOnly", policy =>
-        policy.RequireRole("Admin"));
-});`}
-        language="csharp"
-        title="注册 AdminOnly Policy"
-      />
-      <LessonCode
-        code={`[Authorize(Policy = "AdminOnly")]
-[HttpDelete("{id}")]
-public async Task<IActionResult> DeleteUser(string id)
-{
-    await _userService.DeleteAsync(id);
-    return NoContent();
-}`}
-        language="csharp"
-        title="使用 AdminOnly"
-      />
-
-      <h3>Permission 授权</h3>
-      <p>权限更适合用 claim：</p>
-      <LessonCode
-        code={`builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("CanDeleteUser", policy =>
-        policy.RequireClaim("permission", "user:delete"));
-});`}
-        language="csharp"
-        title="注册 CanDeleteUser Policy"
-      />
-      <LessonCode
-        code={`[Authorize(Policy = "CanDeleteUser")]
-[HttpDelete("{id}")]
-public async Task<IActionResult> DeleteUser(string id)
-{
-    await _userService.DeleteAsync(id);
-    return NoContent();
-}`}
-        language="csharp"
-        title="使用 CanDeleteUser"
-      />
+      <h3>项目角色与权限授权</h3>
+      <p>
+        TaskHub 的角色主要是项目内角色：Owner、Maintainer、Member。角色存在数据库的 <code>ProjectMember</code> 中，所以项目级操作不要只靠 <code>[Authorize(Policy = ...)]</code> 静态声明；先拿到具体项目，再用 <code>IAuthorizationService</code> 做资源级授权。
+      </p>
+      <LessonQuote>
+        <code>[Authorize]</code> 适合回答“是否已登录”或“是否有全局 claim”。“是否是这个项目的 Owner”“是否能管理这个项目的成员”都必须结合具体 <code>Project</code> 和数据库成员关系判断。
+      </LessonQuote>
 
       <h3>资源级授权</h3>
       <p>
-        当权限取决于资源本身，例如“只能删除自己创建的 group”，使用{" "}
+        当权限取决于资源本身，例如“只有项目 Owner 才能归档项目或管理成员”，使用{" "}
         <code>IAuthorizationService</code>。
       </p>
       <LessonCode
-        code={`public class GroupOwnerRequirement : IAuthorizationRequirement { }
+        code={`public class ProjectOwnerRequirement : IAuthorizationRequirement { }
 
-public class GroupOwnerHandler : AuthorizationHandler<GroupOwnerRequirement, Group>
+public class ProjectOwnerHandler : AuthorizationHandler<ProjectOwnerRequirement, Project>
 {
+    private readonly TaskHubDbContext _context;
+
+    public ProjectOwnerHandler(TaskHubDbContext context)
+    {
+        _context = context;
+    }
+
     protected override Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
-        GroupOwnerRequirement requirement,
-        Group group)
+        ProjectOwnerRequirement requirement,
+        Project project)
     {
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? context.User.FindFirstValue(JwtRegisteredClaimNames.Sub);
 
-        if (userId == group.OwnerId)
+        var isOwner = _context.ProjectMembers.Any(member =>
+            member.ProjectId == project.Id &&
+            member.UserId == userId &&
+            member.Role == ProjectRole.Owner &&
+            member.IsActive);
+
+        if (isOwner)
         {
             context.Succeed(requirement);
         }
@@ -142,20 +123,20 @@ public class GroupOwnerHandler : AuthorizationHandler<GroupOwnerRequirement, Gro
       />
       <p>注册：</p>
       <LessonCode
-        code={`builder.Services.AddSingleton<IAuthorizationHandler, GroupOwnerHandler>();`}
+        code={`builder.Services.AddScoped<IAuthorizationHandler, ProjectOwnerHandler>();`}
         language="csharp"
         title="注册 Handler"
       />
       <p>使用：</p>
       <LessonCode
-        code={`var group = await _groupService.GetByIdAsync(id);
-if (group is null)
+        code={`var project = await _projectService.GetByIdAsync(id);
+if (project is null)
     return NotFound();
 
 var result = await _authorizationService.AuthorizeAsync(
     User,
-    group,
-    new GroupOwnerRequirement());
+    project,
+    new ProjectOwnerRequirement());
 
 if (!result.Succeeded)
     return Forbid();`}
@@ -175,7 +156,7 @@ if (!result.Succeeded)
         var accessToken = context.Request.Query["access_token"];
         var path = context.HttpContext.Request.Path;
 
-        if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chat"))
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/projects"))
         {
             context.Token = accessToken;
         }
@@ -215,8 +196,8 @@ if (!result.Succeeded)
 
       <TeacherTask title="Phase 3 主线任务">
         <p>
-          在复刻项目中完成 Phase 3：实现完整认证授权 — JWT 登录、Refresh Token
-          轮换、Role/Permission RBAC、Policy 授权。
+          在 TaskHub 中完成 Phase 3：实现完整认证授权 — JWT 登录、Refresh Token
+          轮换、项目角色/权限策略、资源级授权，并为 SignalR 项目通知 Hub 复用同一套 JWT 身份。
         </p>
       </TeacherTask>
     </LessonShell>

@@ -60,13 +60,13 @@ export const EngineeringTestingLesson = ({
       <p>测试项目通常和业务项目分层放在 tests 目录下，按测试类型拆分：</p>
       <LessonCode
         code={`src/
-├── MyApp.Api/                    # Web API 项目
-├── MyApp.Core/                   # 领域层（纯 C# 类库）
-├── MyApp.Infrastructure/         # 基础设施层（EF Core、Redis 等）
+├── TaskHub.Api/                    # Web API 项目
+├── TaskHub.Core/                   # 领域层（纯 C# 类库）
+├── TaskHub.Infrastructure/         # 基础设施层（EF Core、Redis 等）
 ├── tests/
-│   ├── MyApp.UnitTests/          # 单元测试
-│   ├── MyApp.IntegrationTests/   # 集成测试
-│   └── MyApp.E2ETests/           # 端到端测试`}
+│   ├── TaskHub.UnitTests/          # 单元测试
+│   ├── TaskHub.IntegrationTests/   # 集成测试
+│   └── TaskHub.E2ETests/           # 端到端测试`}
         language="text"
         title="分层项目结构"
       />
@@ -75,7 +75,7 @@ export const EngineeringTestingLesson = ({
       <p>创建测试项目并安装依赖：</p>
       <LessonCode
         code={`# 创建测试项目
-dotnet new xunit -n MyApp.UnitTests
+dotnet new xunit -n TaskHub.UnitTests
 dotnet add package Moq
 dotnet add package FluentAssertions
 
@@ -88,7 +88,7 @@ dotnet test`}
       <p>
         这组命令先创建 xUnit 测试项目，再安装 Mock 和断言库，最后用{" "}
         <code>dotnet test</code> 验证测试项目能跑起来。真实项目中还要把测试项目加入
-        <code>.sln</code>，并引用被测试的业务项目，例如 <code>MyApp.Core</code>。
+        <code>.sln</code>，并引用被测试的业务项目，例如 <code>TaskHub.Core</code>。
       </p>
 
       <p>
@@ -100,84 +100,67 @@ dotnet test`}
         code={`using Moq;
 using FluentAssertions;
 
-public class UserServiceTests
+public class WorkItemServiceTests
 {
-    private readonly Mock<IUserRepository> _userRepositoryMock;
-    private readonly Mock<IRoleService> _roleServiceMock;
-    private readonly UserService _userService;
+    private readonly Mock<IWorkItemRepository> _workItemRepositoryMock;
+    private readonly Mock<IProjectMemberService> _projectMemberServiceMock;
+    private readonly WorkItemService _workItemService;
 
-    public UserServiceTests()
+    public WorkItemServiceTests()
     {
-        _userRepositoryMock = new Mock<IUserRepository>();
-        _roleServiceMock = new Mock<IRoleService>();
-        _userService = new UserService(
-            _userRepositoryMock.Object,
-            _roleServiceMock.Object);
+        _workItemRepositoryMock = new Mock<IWorkItemRepository>();
+        _projectMemberServiceMock = new Mock<IProjectMemberService>();
+        _workItemService = new WorkItemService(
+            _workItemRepositoryMock.Object,
+            _projectMemberServiceMock.Object);
     }
 
     [Fact]  // 类似 @Test
-    public async Task CreateAsync_ShouldHashPassword()
+    public async Task MoveAsync_ShouldChangeStatusWhenOperatorIsProjectMember()
     {
         // Arrange
-        var dto = new CreateUserDto
-        {
-            Username = "testuser",
-            Email = "test@example.com",
-            Password = "password123"
-        };
+        var item = new WorkItem("item-1", "project-1", "接入登录");
 
-        _userRepositoryMock.Setup(r => r.UsernameExistsAsync("testuser"))
-            .ReturnsAsync(false);
-        _userRepositoryMock.Setup(r => r.CreateAsync(It.IsAny<User>()))
-            .ReturnsAsync((User u) => u);
+        _workItemRepositoryMock.Setup(r => r.GetByIdAsync("item-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(item);
+        _projectMemberServiceMock.Setup(s => s.IsActiveMemberAsync("project-1", "user-1"))
+            .ReturnsAsync(true);
 
         // Act
-        var result = await _userService.CreateAsync(dto);
+        var result = await _workItemService.MoveAsync("item-1", WorkItemStatus.InProgress, "user-1");
 
         // Assert
-        result.Should().NotBeNull();
-        result.Username.Should().Be("testuser");
-        result.PasswordHash.Should().NotBe("password123"); // 应被哈希
+        result.Status.Should().Be(WorkItemStatus.InProgress);
 
-        _userRepositoryMock.Verify(
-            r => r.CreateAsync(It.IsAny<User>()), Times.Once);
+        _workItemRepositoryMock.Verify(
+            r => r.SaveAsync(item, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task CreateAsync_ShouldThrowWhenUsernameExists()
+    public async Task MoveAsync_ShouldThrowWhenOperatorIsNotProjectMember()
     {
-        var dto = new CreateUserDto
-        {
-            Username = "existing",
-            Email = "test@example.com",
-            Password = "password123"
-        };
+        var item = new WorkItem("item-1", "project-1", "接入登录");
+        _workItemRepositoryMock.Setup(r => r.GetByIdAsync("item-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(item);
+        _projectMemberServiceMock.Setup(s => s.IsActiveMemberAsync("project-1", "user-1"))
+            .ReturnsAsync(false);
 
-        _userRepositoryMock.Setup(r => r.UsernameExistsAsync("existing"))
-            .ReturnsAsync(true);
+        Func<Task> act = async () => await _workItemService.MoveAsync("item-1", WorkItemStatus.Done, "user-1");
 
-        Func<Task> act = async () => await _userService.CreateAsync(dto);
-
-        await act.Should().ThrowAsync<DuplicateUsernameException>();
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
     }
 
     [Theory]  // 参数化测试
-    [InlineData("user", "user@example.com", true)]
-    [InlineData("", "user@example.com", false)]
-    [InlineData("user", "", false)]
-    public async Task CreateAsync_Validation(string username, string email, bool shouldPass)
+    [InlineData(WorkItemStatus.Todo, WorkItemStatus.InProgress, true)]
+    [InlineData(WorkItemStatus.InProgress, WorkItemStatus.Done, true)]
+    [InlineData(WorkItemStatus.Done, WorkItemStatus.Todo, false)]
+    public void CanMoveStatus(WorkItemStatus current, WorkItemStatus next, bool expected)
     {
-        var dto = new CreateUserDto { Username = username, Email = email, Password = "password123" };
-        Func<Task> act = async () => await _userService.CreateAsync(dto);
-
-        if (shouldPass)
-            await act.Should().NotThrowAsync();
-        else
-            await act.Should().ThrowAsync<ValidationException>();
+        WorkItemStatusPolicy.CanMove(current, next).Should().Be(expected);
     }
 }`}
         language="csharp"
-        title="UserService 单元测试"
+        title="WorkItemService 单元测试"
       />
 
       <h3>集成测试</h3>
@@ -190,49 +173,49 @@ public class UserServiceTests
         code={`using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 
-public class UsersControllerIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
+public class WorkItemsControllerIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly HttpClient _client;
     private readonly WebApplicationFactory<Program> _factory;
 
-    public UsersControllerIntegrationTests(WebApplicationFactory<Program> factory)
+    public WorkItemsControllerIntegrationTests(WebApplicationFactory<Program> factory)
     {
         _factory = factory;
         _client = factory.CreateClient();
     }
 
     [Fact]
-    public async Task CreateUser_ReturnsCreated()
+    public async Task CreateWorkItem_ReturnsCreated()
     {
         var content = new StringContent(
-            JsonSerializer.Serialize(new { username = "newuser", email = "new@test.com", password = "test1234" }),
+            JsonSerializer.Serialize(new { projectId = "project-1", title = "接入登录", dueDate = DateTime.UtcNow.AddDays(3) }),
             Encoding.UTF8,
             "application/json");
 
-        var response = await _client.PostAsync("/api/users", content);
+        var response = await _client.PostAsync("/api/work-items", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var result = await response.Content.ReadFromJsonAsync<UserResponse>();
+        var result = await response.Content.ReadFromJsonAsync<WorkItemSummaryDto>();
         result.Should().NotBeNull();
-        result!.Username.Should().Be("newuser");
+        result!.Title.Should().Be("接入登录");
     }
 
     [Fact]
-    public async Task GetUser_ReturnsNotFound()
+    public async Task GetWorkItem_ReturnsNotFound()
     {
-        var response = await _client.GetAsync("/api/users/nonexistent-id");
+        var response = await _client.GetAsync("/api/work-items/nonexistent-id");
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }`}
         language="csharp"
-        title="UsersController 集成测试"
+        title="WorkItemsController 集成测试"
       />
 
       <h3>测试运行命令</h3>
       <LessonCode
         code={`dotnet test                          # 运行所有测试
 dotnet test --filter "Category=Unit" # 按分类运行
-dotnet test --filter "FullyQualifiedName~UserServiceTests" # 按类名
+dotnet test --filter "FullyQualifiedName~WorkItemServiceTests" # 按类名
 dotnet test --collect:"XPlat Code Coverage" # 生成覆盖率
 dotnet test --logger "console;verbosity=detailed" # 详细输出`}
         language="bash"
@@ -266,13 +249,13 @@ dotnet add package Testcontainers.PostgreSQL`}
       <LessonCode
         code={`using Testcontainers.PostgreSql;
 
-public class UsersControllerIntegrationTests : IAsyncLifetime
+public class WorkItemsControllerIntegrationTests : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _postgres;
     private WebApplicationFactory<Program> _factory = null!;
     private HttpClient _client = null!;
 
-    public UsersControllerIntegrationTests()
+    public WorkItemsControllerIntegrationTests()
     {
         _postgres = new PostgreSqlBuilder()
             .WithDatabase("testdb")
@@ -303,14 +286,14 @@ public class UsersControllerIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task CreateUser_ReturnsCreated()
+    public async Task CreateWorkItem_ReturnsCreated()
     {
         // 使用真实 PostgreSQL，测试结果可靠
         var content = new StringContent(
-            JsonSerializer.Serialize(new { username = "newuser", email = "new@test.com", password = "test1234" }),
+            JsonSerializer.Serialize(new { projectId = "project-1", title = "接入登录" }),
             Encoding.UTF8, "application/json");
 
-        var response = await _client.PostAsync("/api/users", content);
+        var response = await _client.PostAsync("/api/work-items", content);
         response.StatusCode.Should().Be(HttpStatusCode.Created);
     }
 }`}
@@ -338,7 +321,7 @@ public class UsersControllerIntegrationTests : IAsyncLifetime
 
       <TeacherTask title="Phase 6 主线任务">
         <p>
-          在复刻项目中完成 Phase 6：建立工程化体系 — 测试（单元+集成）、结构化日志、健康检查、Swagger、Redis
+          在 TaskHub 中完成 Phase 6：建立工程化体系 — 测试（单元+集成）、结构化日志、健康检查、Swagger、Redis
           缓存、Docker 发布。
         </p>
       </TeacherTask>
@@ -351,7 +334,7 @@ public class UsersControllerIntegrationTests : IAsyncLifetime
             title: "任务目标",
             content: (
               <p>
-                给复刻项目补上一组会长期保留的测试资产：至少 1 个核心业务单测、1 个参数化测试、1 个接真实数据库的集成测试。
+                给 TaskHub 补上一组会长期保留的测试资产：至少 1 个任务状态流转单测、1 个状态策略参数化测试、1 个接真实数据库的集成测试。
               </p>
             ),
             checkpoints: [

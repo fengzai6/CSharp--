@@ -183,11 +183,11 @@ dotnet run`}
         headers={["命令", "用途"]}
         rows={[
           ["dotnet new console -n Demo", "创建控制台项目"],
-          ["dotnet new webapi -n MyApp.Api", "创建 Web API 项目"],
+          ["dotnet new webapi -n TaskHub.Api", "创建 Web API 项目"],
           ["dotnet restore", "还原 NuGet 包"],
           ["dotnet build", "编译"],
-          ["dotnet run --project MyApp.Api", "运行指定项目"],
-          ["dotnet watch --project MyApp.Api", "文件变化后自动重启"],
+          ["dotnet run --project TaskHub.Api", "运行指定项目"],
+          ["dotnet watch --project TaskHub.Api", "文件变化后自动重启"],
           ["dotnet test", "运行测试"],
           ["dotnet add package <PackageName>", "安装 NuGet 包"],
           ["dotnet remove package <PackageName>", "移除 NuGet 包"],

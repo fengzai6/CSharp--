@@ -173,15 +173,15 @@ export const courseModules = [
     title: "SignalR 实时通信",
     duration: "1 周",
     sourcePath: "src/lessons/signalr",
-    goal: "能用 SignalR 实现房间、点对点消息、广播。",
+    goal: "能用 SignalR 实现项目通知、用户定向推送和广播。",
     teacherGuide: {
       teacherNotes: ["SignalR 与 Socket.IO 不兼容，前端必须使用 SignalR 客户端。", "Groups 是连接级分组，业务成员关系仍要落库。"],
-      commonPitfalls: ["用 Socket.IO 客户端连接 SignalR。", "用静态字典当多实例全局在线表。", "自动重连后忘记重新加入房间。"],
-      acceptanceQuestions: ["Clients.Caller、Clients.Group、Clients.User 分别发送给谁？", "Groups 和数据库群组成员关系有什么区别？", "WebSocket 查询参数传 JWT 有什么安全注意事项？"],
+      commonPitfalls: ["用 Socket.IO 客户端连接 SignalR。", "用静态字典当多实例全局在线表。", "自动重连后忘记重新加入项目通知通道。"],
+      acceptanceQuestions: ["Clients.Caller、Clients.Group、Clients.User 分别发送给谁？", "SignalR Group 和数据库 ProjectMember 有什么区别？", "WebSocket 查询参数传 JWT 有什么安全注意事项？"],
     },
     sections: [
-      { id: "signalr-hub", title: "Hub、Groups 与消息发送", objective: "搭建最小 Hub，并实现房间消息。", component: SignalrHubLesson },
-      { id: "signalr-auth-reconnect", title: "认证与断线重连", objective: "复用 JWT 保护 Hub，并在重连后恢复房间状态。", component: SignalrAuthReconnectLesson },
+      { id: "signalr-hub", title: "Hub、Groups 与消息发送", objective: "搭建项目通知 Hub，并实现任务变更推送。", component: SignalrHubLesson },
+      { id: "signalr-auth-reconnect", title: "认证与断线重连", objective: "复用 JWT 保护 Hub，并在重连后恢复项目通知通道。", component: SignalrAuthReconnectLesson },
     ],
   },
   {

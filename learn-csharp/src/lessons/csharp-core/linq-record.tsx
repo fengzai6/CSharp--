@@ -21,6 +21,12 @@ export const CsharpLinqRecordLesson = ({
         学完本节后，你应该能用 LINQ 处理集合操作（过滤、排序、投影、分组），理解延迟执行的原理，并能用 record 定义简洁的 DTO，区分它与 class 的使用场景。
       </p>
 
+      <TeacherTask title="TaskHub 当前状态">
+        <p>
+          上一节已经在 <code>TaskHub.Core</code> 建立了任务、项目和权限相关类型。本节继续用这些类型练 LINQ 和 <code>record</code>，为后面的任务列表接口和 EF Core 投影做准备。
+        </p>
+      </TeacherTask>
+
       <h3>LINQ — 语言级的查询能力</h3>
       <p>
         LINQ 是 C# 最强大的特性之一，它把查询变成了语言的第一公民。列表、数据库、XML、JSON
@@ -29,17 +35,19 @@ export const CsharpLinqRecordLesson = ({
 
       <LessonCode
         code={`// 过滤（Where）— 类似 Array.prototype.filter
-var beijingUsers = users.Where(u => u.City == "Beijing");
+var openItems = workItems.Where(item => item.Status != WorkItemStatus.Done);
 
 // 排序（OrderBy / ThenBy）
-var sorted = users.OrderBy(u => u.Age).ThenBy(u => u.Name);
+var sorted = workItems
+    .OrderBy(item => item.DueDate)
+    .ThenByDescending(item => item.UpdatedAt);
 
 // 投影（Select）— 类似 Array.prototype.map
-var names = users.Select(u => u.Name).ToList();
+var titles = workItems.Select(item => item.Title).ToList();
 
 // 分组（GroupBy）
-var byCity = users.GroupBy(u => u.City)
-    .Select(g => new { City = g.Key, Count = g.Count(), AvgAge = g.Average(u => u.Age) });`}
+var byStatus = workItems.GroupBy(item => item.Status)
+    .Select(group => new { Status = group.Key, Count = group.Count() });`}
         language="csharp"
         title="LINQ 基础操作"
       />
@@ -47,17 +55,17 @@ var byCity = users.GroupBy(u => u.City)
       <h4>链式调用 vs 查询表达式</h4>
       <LessonCode
         code={`// 方法语法（链式，推荐）
-var result = users
-    .Where(u => u.Age > 25)
-    .OrderBy(u => u.Name)
-    .Select(u => u.Name.ToUpper())
+var result = workItems
+    .Where(item => item.ProjectId == projectId)
+    .OrderBy(item => item.DueDate)
+    .Select(item => item.Title.ToUpper())
     .Take(10);
 
 // 查询表达式（SQL 风格）
-var result = from u in users
-             where u.Age > 25
-             orderby u.Name
-             select u.Name.ToUpper();`}
+var result = from item in workItems
+             where item.ProjectId == projectId
+             orderby item.DueDate
+             select item.Title.ToUpper();`}
         language="csharp"
         title="两种 LINQ 写法"
       />
@@ -65,12 +73,12 @@ var result = from u in users
       <h4>延迟执行 vs 立即执行</h4>
       <LessonCode
         code={`// 延迟执行：不真正查询，直到遍历时才执行
-var query = users.Where(u => u.Age > 25);
+var query = workItems.Where(item => item.Status == WorkItemStatus.InProgress);
 
 // 立即执行：查询已执行，返回结果
-var list = users.Where(u => u.Age > 25).ToList();
-var count = users.Where(u => u.Age > 25).Count();
-var first = users.Where(u => u.Age > 25).FirstOrDefault();`}
+var list = workItems.Where(item => item.Status == WorkItemStatus.InProgress).ToList();
+var count = workItems.Where(item => item.Status == WorkItemStatus.InProgress).Count();
+var first = workItems.Where(item => item.Status == WorkItemStatus.InProgress).FirstOrDefault();`}
         language="csharp"
         title="延迟执行与立即执行"
       />
@@ -156,12 +164,19 @@ public static class StringExtensions
         默认生成 init-only 属性，但 record 本身不等于强制不可变；如果你显式写 <code>set</code>，它仍然可以被修改。
       </p>
       <LessonCode
-        code={`public record UserDto(string Id, string Username, string Email);
+        code={`public record WorkItemSummaryDto(
+    string Id,
+    string ProjectId,
+    string Title,
+    WorkItemStatus Status,
+    string? AssigneeName,
+    DateTime? DueDate);
+
 public record PagedResult<T>(IEnumerable<T> Data, int Total, int Page);
 
-var user = new UserDto("1", "alice", "alice@example.com");
+var item = new WorkItemSummaryDto("1", "project-1", "接入登录", WorkItemStatus.Todo, null, null);
 // with 表达式：创建副本，只改一个字段（等价 TS 的展开语法）
-var updated = user with { Username = "alice_new" };`}
+var updated = item with { Status = WorkItemStatus.InProgress };`}
         language="csharp"
         title="record 与 with 表达式"
       />
@@ -201,24 +216,32 @@ var updated = user with { Username = "alice_new" };`}
       </p>
       <LessonCode
         code={`// 包含关联数据 — 类似 TypeORM 的 relations
-var usersWithRoles = await context.Users
-    .Include(u => u.Roles)
-    .Where(u => u.IsActive)
+var projectWithMembers = await context.Projects
+    .Include(project => project.Members)
+    .Where(project => project.IsActive)
     .ToListAsync();
 
 // 在数据库层直接投影成 DTO
-var userDtos = await context.Users
-    .Where(u => u.IsActive)
-    .Select(u => new UserDto
-    {
-        Id = u.Id,
-        Name = u.Name,
-        RoleNames = u.Roles.Select(r => r.Name).ToList()
-    })
+var workItemDtos = await context.WorkItems
+    .Where(item => item.ProjectId == projectId)
+    .OrderByDescending(item => item.UpdatedAt)
+    .Select(item => new WorkItemSummaryDto(
+        item.Id,
+        item.ProjectId,
+        item.Title,
+        item.Status,
+        item.Assignee == null ? null : item.Assignee.Username,
+        item.DueDate))
     .ToListAsync();`}
         language="csharp"
         title="LINQ to EF Core"
       />
+
+      <TeacherTask title="TaskHub 本节产物">
+        <p>
+          本节结束后，<code>TaskHub.Core</code> 中已经有适合接口返回的任务摘要 DTO 和分页 DTO。后面的 Controller、EF Core 查询和 OpenAPI 示例都应该复用这些命名，不再切回无关的用户列表演示。
+        </p>
+      </TeacherTask>
     </LessonShell>
   );
 };

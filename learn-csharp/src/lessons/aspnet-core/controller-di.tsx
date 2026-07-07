@@ -24,6 +24,12 @@ export const AspnetControllerDiLesson = ({
         方法、路由参数和模型绑定，并用授权策略保护端点。
       </p>
 
+      <TeacherTask title="TaskHub 当前状态">
+        <p>
+          现在你已经有 <code>TaskHub.Core</code> 中的领域类型和 DTO。本节把它们接到 <code>TaskHub.Api</code>：先实现 Projects / WorkItems 的 Controller + Service 主线。
+        </p>
+      </TeacherTask>
+
       <h3>DI 依赖注入</h3>
       <p>
         ASP.NET Core 内置 DI 容器。注册服务后通过<strong>构造函数注入</strong>
@@ -33,17 +39,17 @@ export const AspnetControllerDiLesson = ({
 
       <LessonCode
         code={`// 注册
-builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddScoped<UserService>(); // 如果只有一种实现，可简化
+builder.Services.AddScoped<IProjectService, ProjectService>();
+builder.Services.AddScoped<IWorkItemService, WorkItemService>();
 
 // 使用 — 通过构造函数注入（与 NestJS 完全一致！）
-public class UsersController : ControllerBase
+public class ProjectsController : ControllerBase
 {
-    private readonly IUserService _userService;
+    private readonly IProjectService _projectService;
 
-    public UsersController(IUserService userService)
+    public ProjectsController(IProjectService projectService)
     {
-        _userService = userService;
+        _projectService = projectService;
     }
 }`}
         language="csharp"
@@ -146,14 +152,14 @@ public ActionResult Get(string id) { ... }`}
       </p>
 
       <LessonCode
-        code={`public class UsersController : ControllerBase
+        code={`public class WorkItemsController : ControllerBase
 {
     // @Body → 方法参数（从 Request Body 绑定）
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateUserDto dto)
+    public async Task<IActionResult> Create([FromBody] CreateWorkItemRequest request)
     {
-        var user = await _userService.CreateAsync(dto);
-        return CreatedAtAction(nameof(GetById), new { id = user.Id }, user);
+        var item = await _workItemService.CreateAsync(request);
+        return CreatedAtAction(nameof(GetById), new { id = item.Id }, item);
     }
 
     // @Param → URL 路径参数
@@ -167,12 +173,12 @@ public ActionResult Get(string id) { ... }`}
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null)
     {
-        return Ok(await _userService.GetAllAsync(page, pageSize, search));
+        return Ok(await _workItemService.GetAllAsync(page, pageSize, search));
     }
 
     // @Headers
-    [HttpGet("profile")]
-    public IActionResult GetProfile([FromHeader] string authorization) { ... }
+    [HttpGet("mine")]
+    public IActionResult GetMyWorkItems([FromHeader] string authorization) { ... }
 }`}
         language="csharp"
         title="FromBody / FromQuery / FromHeader"
@@ -216,16 +222,16 @@ public async Task<IActionResult> Delete(string id) { ... }`}
         code={`builder.Services.AddAuthorization(options =>
 {
     // 基础策略（基于角色）
-    options.AddPolicy("AdminOnly", policy =>
-        policy.RequireRole("Admin"));
+    options.AddPolicy("ProjectOwnerOnly", policy =>
+        policy.RequireRole("ProjectOwner"));
 
     // 基于声明的策略
-    options.AddPolicy("CanDeleteUser", policy =>
-        policy.RequireClaim("permission", "user:delete"));
+    options.AddPolicy("CanArchiveProject", policy =>
+        policy.RequireClaim("permission", "project:archive"));
 
     // 基于资源的策略（自定义 Requirement）
-    options.AddPolicy("GroupOwner", policy =>
-        policy.AddRequirements(new GroupOwnerRequirement()));
+    options.AddPolicy("ProjectOwner", policy =>
+        policy.AddRequirements(new ProjectOwnerRequirement()));
 });`}
         language="csharp"
         title="授权策略"
@@ -238,29 +244,29 @@ public async Task<IActionResult> Delete(string id) { ... }`}
       </p>
 
       <LessonCode
-        code={`public class GroupOwnerRequirement : IAuthorizationRequirement { }
+        code={`public class ProjectOwnerRequirement : IAuthorizationRequirement { }
 
-public class GroupOwnerHandler : AuthorizationHandler<GroupOwnerRequirement>
+public class ProjectOwnerHandler : AuthorizationHandler<ProjectOwnerRequirement>
 {
-    private readonly IGroupsService _groupsService;
+    private readonly IProjectService _projectService;
 
-    public GroupOwnerHandler(IGroupsService groupsService)
+    public ProjectOwnerHandler(IProjectService projectService)
     {
-        _groupsService = groupsService;
+        _projectService = projectService;
     }
 
     protected override async Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
-        GroupOwnerRequirement requirement)
+        ProjectOwnerRequirement requirement)
     {
         if (context.Resource is HttpContext httpContext)
         {
-            var groupId = httpContext.Request.RouteValues["id"]?.ToString();
+            var projectId = httpContext.Request.RouteValues["id"]?.ToString();
             var userId = httpContext.User.FindFirst("sub")?.Value;
 
-            if (groupId != null && userId != null)
+            if (projectId != null && userId != null)
             {
-                var isOwner = await _groupsService.IsGroupOwnerAsync(groupId, userId);
+                var isOwner = await _projectService.IsProjectOwnerAsync(projectId, userId);
                 if (isOwner)
                 {
                     context.Succeed(requirement);
@@ -271,14 +277,14 @@ public class GroupOwnerHandler : AuthorizationHandler<GroupOwnerRequirement>
 }
 
 // 注册
-builder.Services.AddScoped<IAuthorizationHandler, GroupOwnerHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, ProjectOwnerHandler>();
 
 // 使用
-[Authorize(Policy = "GroupOwner")]
+[Authorize(Policy = "ProjectOwner")]
 [HttpDelete("{id}")]
-public async Task<IActionResult> DeleteGroup(string id) { ... }`}
+public async Task<IActionResult> ArchiveProject(string id) { ... }`}
         language="csharp"
-        title="GroupOwnerHandler"
+        title="ProjectOwnerHandler"
       />
 
       <LessonCheckpoint
@@ -315,8 +321,8 @@ public async Task<IActionResult> DeleteGroup(string id) { ... }`}
 
       <TeacherTask title="Phase 1 主线任务">
         <p>
-          在复刻项目中完成 Phase 1：实现 User CRUD — Controller + Service + DTO
-          三层分离，加入 FluentValidation 验证。
+          在 TaskHub 中完成 Phase 1：实现 Projects / WorkItems CRUD — Controller + Service + DTO
+          三层分离，并为项目归档、任务创建等操作预留授权策略入口。
         </p>
       </TeacherTask>
 
