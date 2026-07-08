@@ -66,6 +66,32 @@ export const AuthRefreshPolicyLesson = ({
         <li>签发新的 access token 和 refresh token</li>
       </ol>
 
+      <LessonCode
+        code={`public async Task<LoginResponse> RefreshAsync(string refreshToken)
+{
+    var tokenHash = Convert.ToBase64String(
+        SHA256.HashData(Encoding.UTF8.GetBytes(refreshToken)));
+
+    var existingToken = await _context.RefreshTokens
+        .FirstOrDefaultAsync(t => t.TokenHash == tokenHash);
+
+    if (existingToken is null || !existingToken.IsActive)
+        throw new UnauthorizedAccessException("Refresh Token 无效");
+
+    // 撤销旧 token
+    existingToken.RevokedAt = DateTime.UtcNow;
+    await _context.SaveChangesAsync();
+
+    var user = await _context.Users.FirstAsync(u => u.Id == existingToken.UserId);
+    var accessToken = CreateAccessToken(user);
+    var newRefreshToken = await CreateRefreshTokenAsync(user.Id);
+
+    return new LoginResponse(accessToken, newRefreshToken);
+}`}
+        language="csharp"
+        title="RefreshAsync — 轮换并撤销旧 token"
+      />
+
       <LessonQuote>
         Refresh Token
         不要明文保存到数据库；存储的是哈希，明文只在创建时返回一次。

@@ -262,6 +262,27 @@ public async Task<ActionResult<WorkItemSummaryDto>> GetById(string id)
         title="ProblemDetails"
       />
 
+      <h4>CORS</h4>
+      <p>
+        前端开发时需要配置跨域。先注册服务，再添加中间件。生产环境要严格指定允许的来源，不要用 <code>AllowAnyOrigin()</code>。
+      </p>
+      <LessonCode
+        code={`// 注册
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+        policy.WithOrigins("http://localhost:5173")
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials());
+});
+
+// 中间件（放在 UseAuthentication 前面）
+app.UseCors("AllowFrontend");`}
+        language="csharp"
+        title="CORS"
+      />
+
       <h4>统一响应格式中间件</h4>
       <p>
         对应 NestJS 的 <code>PostResponseInterceptor</code>，通过替换{" "}

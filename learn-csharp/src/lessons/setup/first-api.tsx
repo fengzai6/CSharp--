@@ -22,19 +22,14 @@ export const SetupFirstApiLesson = ({
 
       <h3>运行已有 TaskHub.Api</h3>
       <p>
-        上一节已经创建了 <code>TaskHub.Api</code>，这一节不要再新建第二个 Web API。回到 <code>TaskHub</code> 根目录，直接运行已有入口项目：
+        上一节已经创建了 <code>TaskHub.Api</code>，这一节不要再新建第二个 Web API。回到 <code>TaskHub</code> 根目录直接运行：
       </p>
 
       <LessonCode
-        code={`cd TaskHub
-dotnet run --project TaskHub.Api`}
+        code={`dotnet run --project TaskHub.Api`}
         language="bash"
         title="运行已有 Web API"
       />
-
-      <p>
-        <code>dotnet run --project</code> 会指定要运行的 <code>.csproj</code>，所以你可以一直停留在 Solution 根目录执行命令。这样后续安装包、构建、测试都围绕同一个 TaskHub 工作区，不会把课程拆成多个互不相干的项目。
-      </p>
 
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
@@ -79,12 +74,6 @@ dotnet run --project TaskHub.Api`}
         title="安装 NuGet 包"
       />
 
-      <p>
-        <code>dotnet add ... package</code> 会把包引用写入指定项目的 <code>.csproj</code>{" "}
-        文件，并尝试还原依赖。它类似 <code>npm install</code> 写入{" "}
-        <code>package.json</code>，但 .NET 记录的是 <code>PackageReference</code>。
-      </p>
-
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={
@@ -116,7 +105,6 @@ dotnet run --project TaskHub.Api`}
         会自动 restore；手动执行它主要用于排查包还原问题。
       </p>
 
-      <LessonCode code="dotnet restore TaskHub.sln" language="bash" title="还原 NuGet 包" />
 
       <TeacherTask title="对照 NestJS 理解">
         <p>

@@ -383,22 +383,29 @@ public class ProfileClient : IProfileClient
       </LessonQuote>
 
       <h3>性能优化</h3>
-      <h4>避免 N+1 查询</h4>
+      <h4>避免 N+1 查询（排查方法）</h4>
+      <p>
+        排查 N+1 的基本方法是启用 EF Core 日志观察生成的 SQL。详细说明和修复代码见 EF Core 关系建模章节。
+      </p>
       <LessonCode
-        code={`// 错误：循环内查询
-foreach (var item in workItems)
+        code={`// 启用 EF Core 日志查看生成的 SQL（开发环境）
+builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    var comments = await _context.WorkItemComments
-        .Where(comment => comment.WorkItemId == item.Id)
-        .ToListAsync(); // N+1!
-}
+    options.UseNpgsql(connectionString);
+    options.EnableSensitiveDataLogging();  // 开发环境启用
+    options.LogTo(Console.WriteLine, LogLevel.Information);
+});
 
-// 正确：预加载任务评论
-var itemsWithComments = await _context.WorkItems
-    .Include(item => item.Comments)
-    .ToListAsync();`}
+// 排查：看日志中是否有重复 SELECT 语句
+// ❌ N+1 会输出：
+//   SELECT * FROM WorkItems
+//   SELECT * FROM WorkItemComments WHERE WorkItemId = 1
+//   SELECT * FROM WorkItemComments WHERE WorkItemId = 2
+// ✅ 正确会输出（一次性 JOIN）：
+//   SELECT w.*, c.* FROM WorkItems w
+//   LEFT JOIN WorkItemComments c ON w.Id = c.WorkItemId`}
         language="csharp"
-        title="用 Include 预加载"
+        title="排查 N+1 查询"
       />
 
       <h4>分页限制</h4>
@@ -421,41 +428,8 @@ public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] in
 
       <h4>异步最佳实践</h4>
       <LessonQuote>
-        永远不要用 <code>.Result</code> 或 <code>.Wait()</code> 同步等待 Task，会有死锁风险；同步阻塞调用也会占满线程。
+        永远不要用 <code>.Result</code> 或 <code>.Wait()</code> 同步等待 Task，详细说明见 C# 核心章节。
       </LessonQuote>
-      <LessonCode
-        code={`// ✅ 正确
-public async Task<WorkItem?> GetByIdAsync(string id)
-{
-    return await _context.WorkItems.FirstOrDefaultAsync(item => item.Id == id);
-}
-
-// 短时间 CPU 计算可临时 Task.Run；长任务应放到后台队列或 Worker
-public async Task<WorkItemSummaryDto?> GetWithSummaryAsync(string id)
-{
-    var item = await GetByIdAsync(id);
-    if (item == null) return null;
-
-    // 如果计算很重，不要长期占用请求线程池，应改为后台任务
-    var summary = await Task.Run(() => HeavyCalculation(item));
-
-    return new WorkItemSummaryDto(item.Id, item.ProjectId, item.Title, item.Status, null, item.DueDate);
-}
-
-// ❌ 错误：阻塞调用
-public WorkItem GetById(string id)
-{
-    return _context.WorkItems.First(item => item.Id == id); // 阻塞线程
-}
-
-// ❌ 错误：.Result
-public async Task<WorkItem?> GetByIdAsync(string id)
-{
-    return _context.WorkItems.FirstAsync(item => item.Id == id).Result; // 死锁风险！
-}`}
-        language="csharp"
-        title="异步正确与错误写法"
-      />
 
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}

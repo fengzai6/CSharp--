@@ -184,6 +184,10 @@ public ActionResult Get(string id) { ... }`}
         title="FromBody / FromQuery / FromHeader"
       />
 
+      <LessonQuote>
+        <code>[ApiController]</code> 特性会让框架在模型绑定失败时自动返回 400 状态码和 <code>ModelState</code> 错误信息，不需要在每个 Action 里手动检查 <code>if (!ModelState.IsValid)</code>。这是与 NestJS 手动验证的重要差异。
+      </LessonQuote>
+
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={

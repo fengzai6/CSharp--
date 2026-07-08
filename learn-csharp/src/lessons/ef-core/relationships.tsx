@@ -245,6 +245,45 @@ var items = await _context.WorkItems
         title="任务列表分页 + 搜索 + 投影"
       />
 
+      <h3>RefreshToken 实体</h3>
+      <p>
+        认证章节需要 Refresh Token 持久化。这里先补实体和配置，Auth 章节直接复用 <code>TaskHubDbContext</code> 即可。
+      </p>
+
+      <LessonCode
+        code={`public class RefreshToken : BaseEntity
+{
+    public string UserId { get; set; } = string.Empty;
+    public string TokenHash { get; set; } = string.Empty;
+    public DateTime ExpiresAt { get; set; }
+    public DateTime? RevokedAt { get; set; }
+    public bool IsExpired => DateTime.UtcNow >= ExpiresAt;
+    public bool IsRevoked => RevokedAt is not null;
+    public bool IsActive => !IsExpired && !IsRevoked;
+
+    public User User { get; set; } = null!;
+}
+
+public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
+{
+    public void Configure(EntityTypeBuilder<RefreshToken> builder)
+    {
+        builder.HasIndex(token => token.TokenHash).IsUnique();
+
+        builder.HasOne(token => token.User)
+            .WithMany(user => user.RefreshTokens)
+            .HasForeignKey(token => token.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}`}
+        language="csharp"
+        title="RefreshToken"
+      />
+
+      <LessonQuote>
+        只存 <code>TokenHash</code> 哈希值，不存明文。轮换时通过 <code>RevokedAt</code> 标记撤销，不物理删除。
+      </LessonQuote>
+
       <h3>避免 N+1 查询</h3>
       <p>
         关系数据没有预加载时，遍历集合可能触发逐条查询（N+1）。列表接口优先用投影；详情页确实要实体图时再用 <code>Include</code>。

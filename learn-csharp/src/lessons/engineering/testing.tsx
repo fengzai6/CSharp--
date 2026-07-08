@@ -321,8 +321,7 @@ public class WorkItemsControllerIntegrationTests : IAsyncLifetime
 
       <TeacherTask title="Phase 6 主线任务">
         <p>
-          在 TaskHub 中完成 Phase 6：建立工程化体系 — 测试（单元+集成）、结构化日志、健康检查、Swagger、Redis
-          缓存、Docker 发布。
+          在 TaskHub 中完成 Phase 6：建立工程化体系 — 单元测试（聚焦业务规则）和集成测试（使用 WebApplicationFactory + Testcontainers）。
         </p>
       </TeacherTask>
 

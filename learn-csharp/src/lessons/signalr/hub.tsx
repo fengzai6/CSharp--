@@ -290,6 +290,47 @@ app.MapHub<ProjectNotificationHub>("/hubs/projects");`,
             codeTitle: "推送事件",
             checkpoints: ["使用项目 Group", "发送 DTO 而不是 EF 实体", "业务数据已先保存到数据库"],
           },
+          {
+            title: "在浏览器验证实时推送",
+            content: <p>用一个最小 HTML 页面连接 <code>ProjectNotificationHub</code>，加入项目组，看到 <code>WorkItemUpdated</code> 实时到达。</p>,
+            code: `<!-- wwwroot/test-signalr.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+</head>
+<body>
+  <button id="join">Join Project</button>
+  <pre id="log"></pre>
+  <script>
+    const connection = new signalR.HubConnectionBuilder()
+      .withUrl("/hubs/projects", {
+        accessTokenFactory: () => localStorage.getItem("accessToken") ?? ""
+      })
+      .withAutomaticReconnect()
+      .build();
+
+    connection.on("WorkItemUpdated", (dto) => {
+      document.getElementById("log").textContent =
+        "WorkItemUpdated: " + JSON.stringify(dto, null, 2);
+    });
+
+    connection.start().then(() => console.log("connected"));
+
+    document.getElementById("join").onclick = () =>
+      connection.invoke("JoinProject", "project-1");
+  </script>
+</body>
+</html>`,
+            codeLanguage: "html",
+            codeTitle: "test-signalr.html",
+            checkpoints: [
+              "打开浏览器，点击 Join Project",
+              "用 Postman 调用一次任务状态变更 API",
+              "页面实时显示 WorkItemUpdated 推送数据",
+              "断网再恢复后能自动重连",
+            ],
+          },
         ]}
       />
     </LessonShell>

@@ -105,6 +105,7 @@ public class TaskHubDbContext : DbContext
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
     public DbSet<WorkItem> WorkItems => Set<WorkItem>();
     public DbSet<WorkItemComment> WorkItemComments => Set<WorkItemComment>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     // 重写配置 — 替代 TypeORM 的 @Entity 装饰器
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -170,6 +171,7 @@ public class User : BaseEntity
     public List<ProjectMember> ProjectMembers { get; set; } = new();
     public List<WorkItem> AssignedWorkItems { get; set; } = new();
     public List<WorkItemComment> Comments { get; set; } = new();
+    public List<RefreshToken> RefreshTokens { get; set; } = new();
 
     public string DisplayName => Username;
 
@@ -303,6 +305,38 @@ dotnet ef dbcontext scaffold "Host=localhost;Database=taskhub;Username=postgres;
         <code>dbcontext scaffold</code> 是反向工程，用已有数据库生成 C# 模型。学习 Code First 时，主线只需要先掌握
         <code>migrations add</code> 和 <code>database update</code>。
       </p>
+
+      <h3>注册 DbContext</h3>
+      <p>
+        在 <code>TaskHub.Api</code> 的 <code>Program.cs</code> 注册数据库上下文，连接字符串放在 <code>appsettings.json</code> 中。
+      </p>
+      <LessonCode
+        code={`// appsettings.json
+{
+  "ConnectionStrings": {
+    "Default": "Host=localhost;Database=taskhub;Username=postgres;Password=postgres"
+  }
+}`}
+        language="json"
+        title="appsettings.json"
+      />
+      <LessonCode
+        code={`// TaskHub.Api/Program.cs
+builder.Services.AddDbContext<TaskHubDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
+
+// 运行迁移（开发环境）
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<TaskHubDbContext>();
+    db.Database.Migrate();
+}`}
+        language="csharp"
+        title="注册 TaskHubDbContext"
+      />
+      <LessonQuote>
+        <code>AddDbContext</code> 默认注册为 <code>Scoped</code>，每次 HTTP 请求一个实例。生产环境推荐用 <code>dotnet ef database update</code> 应用迁移，而不是在 <code>Program.cs</code> 里调 <code>Migrate()</code>。
+      </LessonQuote>
 
       <h3>常见误区</h3>
       <ul>

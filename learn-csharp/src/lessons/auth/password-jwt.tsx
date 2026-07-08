@@ -31,7 +31,7 @@ export const AuthPasswordJwtLesson = ({
 
       <TeacherTask title="TaskHub 当前状态">
         <p>
-          TaskHub 已经有用户、项目、项目成员和任务数据模型。本节在这个模型上补注册、登录、密码哈希和 JWT，让后续 Projects / WorkItems API 能真正按当前用户执行。
+          TaskHub 已经有用户、项目、项目成员、任务和 <code>RefreshToken</code> 数据模型（EF Core 章节已配置）。本节在这个基础上实现注册、登录、密码哈希和 JWT，让后续 API 能真正按当前用户执行。
         </p>
       </TeacherTask>
 
@@ -244,6 +244,37 @@ builder.Services.AddAuthorization();`}
           里塞太多用户资料。短期 Access Token 配合 Refresh Token 才是更安全的组合。
         </p>
       </TeacherTask>
+
+      <h3>注册流程</h3>
+      <LessonCode
+        code={`public async Task<User> RegisterAsync(RegisterRequest request)
+{
+    // 唯一性检查
+    var emailExists = await _context.Users
+        .AnyAsync(u => u.Email == request.Email);
+
+    if (emailExists)
+        throw new ArgumentException("该邮箱已被注册");
+
+    var user = new User
+    {
+        Username = request.Username,
+        Email = request.Email,
+        PasswordHash = _passwordService.Hash(null!, request.Password)
+    };
+
+    _context.Users.Add(user);
+    await _context.SaveChangesAsync();
+
+    return user;
+}`}
+        language="csharp"
+        title="RegisterAsync"
+      />
+
+      <LessonQuote>
+        注册流程用 FluentValidation 做输入校验（邮箱格式、密码强度），用 Service 做业务校验（邮箱唯一性）。两者职责不要混。
+      </LessonQuote>
 
       <h3>登录流程</h3>
       <LessonCode

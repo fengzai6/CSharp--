@@ -287,6 +287,24 @@ public async Task<ActionResult<WorkItemSummaryDto>> Create([FromBody] CreateWork
         title="ProducesResponseType"
       />
 
+      <h3>DTO ↔ Entity 映射</h3>
+      <p>
+        在 Controller 和 Service 中经常需要把 Entity 转换为 DTO（或反向）。课程主线全程使用手动映射（<code>new WorkItemSummaryDto(...)</code>），这在小项目中够用，而且好处是映射逻辑完全透明。当字段差异变大时，可以考虑 <code>Mapster</code> 或 <code>AutoMapper</code>，但不要因为"看起来高级"而过早引入。
+      </p>
+      <LessonCode
+        code={`// 手动映射（课程主线使用的方式）
+public static WorkItemSummaryDto ToDto(this WorkItem item) => new(
+    item.Id,
+    item.ProjectId,
+    item.Title,
+    item.Status,
+    item.Assignee?.Username,
+    item.DueDate
+);`}
+        language="csharp"
+        title="手动映射"
+      />
+
       <h3>架构最佳实践</h3>
       <p>推荐两种文件夹结构：</p>
 

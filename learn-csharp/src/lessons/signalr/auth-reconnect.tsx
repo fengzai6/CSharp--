@@ -35,50 +35,20 @@ export const SignalrAuthReconnectLesson = ({
 
       <h3>JWT 认证</h3>
       <p>
-        在 <code>Program.cs</code> 配置 JWT Bearer 认证。浏览器 WebSocket / SSE 常通过 <code>access_token</code> 查询参数传 token，所以要在 <code>OnMessageReceived</code> 中只对 Hub 路径取出它。
+        SignalR 复用 Auth 章节配置的 JWT Bearer 认证。浏览器 WebSocket / SSE 常通过 <code>access_token</code> 查询参数传 token，需要在 <code>OnMessageReceived</code> 中只对 Hub 路径取出它（见 Auth 章节示例）。
       </p>
-
+      <p>
+        只需确认 <code>Program.cs</code> 中有以下注册：
+      </p>
       <LessonCode
-        code={`builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = builder.Configuration["Jwt:Issuer"],
-            ValidAudience = builder.Configuration["Jwt:Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Secret"]!))
-        };
-
-        options.Events = new JwtBearerEvents
-        {
-            OnMessageReceived = context =>
-            {
-                var accessToken = context.Request.Query["access_token"];
-                var path = context.HttpContext.Request.Path;
-
-                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/projects"))
-                {
-                    context.Token = accessToken;
-                }
-
-                return Task.CompletedTask;
-            }
-        };
-    });
-
+        code={`// 复用 Auth 章节的 JWT 配置，这里只列 SignalR 相关部分
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapHub<ProjectNotificationHub>("/hubs/projects");`}
         language="csharp"
-        title="配置 JWT Bearer 认证"
+        title="SignalR 注册"
       />
-
       <LessonQuote>
         查询参数传 token 必须使用 HTTPS/WSS，并避免在应用日志、网关日志和 APM 中记录完整 URL。否则 <code>access_token</code> 可能被日志系统长期保存。
       </LessonQuote>

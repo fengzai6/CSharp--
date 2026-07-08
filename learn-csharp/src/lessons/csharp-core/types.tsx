@@ -39,10 +39,6 @@ export const CsharpTypesLesson = ({
       </TeacherTask>
 
       <h3>从 TypeScript 到 C#：变量与类型</h3>
-      <p>
-        <code>var</code> 不是 <code>any</code>。它在编译时确定类型，之后不可变。
-      </p>
-
       <LessonCode
         code={`// TypeScript:
 let name: string = "hello";
