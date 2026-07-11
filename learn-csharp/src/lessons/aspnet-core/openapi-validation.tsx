@@ -31,10 +31,14 @@ export const AspnetOpenApiValidationLesson = ({
 
       <h3>数据验证</h3>
       <h4>方式一：Data Annotations</h4>
-      <p>类似 NestJS 的 class-validator，用属性标注在 DTO 字段上：</p>
+      <p>类似 NestJS 的 class-validator，用属性标注在 DTO 字段上。这个 class 替换了上一节 <code>controller-di</code> 中的 <code>record CreateWorkItemRequest(string ProjectId, string Title)</code>，新增了 <code>Description</code>、<code>AssigneeId</code>、<code>DueDate</code> 字段：</p>
 
       <LessonCode
-        code={`public class CreateWorkItemRequest
+        code={`using System.ComponentModel.DataAnnotations;
+
+namespace TaskHub.Api.Models.Requests;
+
+public class CreateWorkItemRequest
 {
     [Required(ErrorMessage = "项目 ID 不能为空")]
     public string ProjectId { get; set; } = string.Empty;
@@ -50,7 +54,7 @@ export const AspnetOpenApiValidationLesson = ({
     public DateTime? DueDate { get; set; }
 }`}
         language="csharp"
-        title="Data Annotations"
+        title="Models/Requests/CreateWorkItemRequest.cs"
       />
       <p>
         内置验证属性：<code>[Required]</code>、<code>[StringLength]</code>、{" "}
@@ -111,7 +115,12 @@ public class CreateWorkItemRequestValidator : AbstractValidator<CreateWorkItemRe
       <p>注册验证器（全局自动校验）：</p>
 
       <LessonCode
-        code={`builder.Services.AddFluentValidationAutoValidation();
+        code={`// 1. 文件顶部添加 using：
+using FluentValidation;
+using FluentValidation.AspNetCore;
+
+// 2. builder.Services 部分添加：
+builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();`}
         language="csharp"
         title="注册验证器"
@@ -120,6 +129,54 @@ builder.Services.AddValidatorsFromAssemblyContaining<Program>();`}
         <code>AddFluentValidationAutoValidation()</code> 主要服务 Controller
         模型绑定流程；Minimal API 通常用 Endpoint Filter 或在端点里显式调用验证器，不要混用两套写法。
       </LessonQuote>
+
+      <h4>落盘</h4>
+      <p>
+        把上面的验证器写入文件，<code>AddValidatorsFromAssemblyContaining&lt;Program&gt;</code> 会自动扫描并注册：
+      </p>
+
+      <LessonCode
+        code={`mkdir -p TaskHub.Api/Validators`}
+        language="bash"
+        title="创建 Validators 目录"
+      />
+
+      <LessonCode
+        code={`using FluentValidation;
+using TaskHub.Api.Models.Requests;
+
+namespace TaskHub.Api.Validators;
+
+public class CreateWorkItemRequestValidator : AbstractValidator<CreateWorkItemRequest>
+{
+    public CreateWorkItemRequestValidator()
+    {
+        RuleFor(x => x.ProjectId)
+            .NotEmpty()
+            .WithMessage("项目 ID 不能为空");
+
+        RuleFor(x => x.Title)
+            .NotEmpty()
+            .MinimumLength(2)
+            .MaximumLength(120)
+            .WithMessage("任务标题长度应在 2-120 之间");
+
+        RuleFor(x => x.Description)
+            .MaximumLength(2000)
+            .When(x => x.Description is not null);
+
+        RuleFor(x => x)
+            .Must(x => x.DueDate is null || x.DueDate.Value > DateTime.UtcNow)
+            .WithMessage("截止时间必须晚于当前时间");
+    }
+}`}
+        language="csharp"
+        title="Validators/CreateWorkItemRequestValidator.cs"
+      />
+
+      <p>
+        写完运行 <code>dotnet build TaskHub.Api</code> 确认编译通过。
+      </p>
 
       <h4>class-validator 与 FluentValidation 对比</h4>
       <LessonTable
@@ -196,7 +253,7 @@ app.MapGet("/work-items/{id}", async (string id, IWorkItemService service) =>
     .AddEndpointFilter(async (context, next) =>
     {
         // 类似 canActivate()
-        var workItemId = context.Arguments["id"] as string;
+        var workItemId = context.HttpContext.Request.RouteValues["id"]?.ToString();
         if (workItemId == null)
             return Results.BadRequest("Invalid ID");
         return await next(context);
@@ -239,9 +296,24 @@ if (app.Environment.IsDevelopment())
         title="内置 OpenAPI"
       />
 
-      <h4>用 Swashbuckle 提供 Swagger UI</h4>
+      <h4>用 Swashbuckle 提供 Swagger UI（含 JWT 认证支持）</h4>
+      <p>
+        如果你在 setup 章节选择了 Scalar，这里可以跳过；Scalar 的 JWT 支持在 Auth 章节再补。如果选择 Swashbuckle，按以下步骤配置：
+      </p>
+
       <LessonCode
-        code={`builder.Services.AddSwaggerGen(c =>
+        code={`dotnet add TaskHub.Api/TaskHub.Api.csproj package Swashbuckle.AspNetCore`}
+        language="bash"
+        title="安装 Swashbuckle"
+      />
+
+      <LessonCode
+        code={`// 1. 文件顶部添加 using：
+using Microsoft.OpenApi.Models;
+
+// 2. builder.Services 部分添加：
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo
     {
@@ -260,9 +332,16 @@ if (app.Environment.IsDevelopment())
         In = ParameterLocation.Header,
         Description = "输入格式: Bearer {your JWT token}"
     });
-});`}
+});
+
+// 3. var app = builder.Build(); 之后，开发环境判断内添加：
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}`}
         language="csharp"
-        title="SwaggerGen 配置"
+        title="Program.cs 完整 Swashbuckle 配置"
       />
 
       <h4>Controller 中的 Swagger 装饰</h4>
@@ -294,12 +373,9 @@ public async Task<ActionResult<WorkItemSummaryDto>> Create([FromBody] CreateWork
       <LessonCode
         code={`// 手动映射（课程主线使用的方式）
 public static WorkItemSummaryDto ToDto(this WorkItem item) => new(
-    item.Id,
-    item.ProjectId,
-    item.Title,
-    item.Status,
-    item.Assignee?.Username,
-    item.DueDate
+    item.Id, item.ProjectId, item.Title, item.Status,
+    null,  // AssigneeName — EF 接入后从 navigation 属性取
+    null   // DueDate — EF 接入后从实体取
 );`}
         language="csharp"
         title="手动映射"

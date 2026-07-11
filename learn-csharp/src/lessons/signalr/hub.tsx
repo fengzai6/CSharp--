@@ -114,7 +114,9 @@ await Clients.Groups(projectGroupIds).SendAsync("ProjectChanged", data);        
       <LessonCode
         code={`using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using TaskHub.Infrastructure.Data;
 
 [Authorize]
 public class ProjectNotificationHub : Hub
@@ -186,46 +188,66 @@ public class ProjectNotificationHub : Hub
         不要用静态字典当多实例全局在线表。单机学习可以临时观察连接，但真正多实例部署要使用 Redis backplane、持久化在线状态或只依赖业务数据库恢复项目组。
       </LessonQuote>
 
+      <h3>前置：补 MoveAsync 状态变更端点</h3>
+      <p>
+        推送需要一个"状态变更后触发"的入口。先在已有的 <code>IWorkItemService</code> 和 <code>WorkItemsController</code> 中补上 Move 端点：
+      </p>
+
+      <LessonCode
+        code={`// IWorkItemService.cs 末尾追加：
+Task<WorkItem> MoveAsync(string id, WorkItemStatus status);
+
+// WorkItemService.cs 追加实现（内存版）：
+public Task<WorkItem> MoveAsync(string id, WorkItemStatus status)
+{
+    var item = _items.FirstOrDefault(i => i.Id == id)
+        ?? throw new KeyNotFoundException("任务不存在");
+    item.MoveTo(status);
+    return Task.FromResult(item);
+}
+
+// WorkItemsController.cs 追加端点：
+[HttpPost("{id}/move")]
+public async Task<IActionResult> Move(string id, [FromBody] WorkItemStatus status)
+{
+    var item = await _workItemService.MoveAsync(id, status);
+    return Ok(item);
+}`}
+        language="csharp"
+        title="补 MoveAsync 状态变更"
+      />
+
       <h3>从业务服务推送通知</h3>
       <p>
         Controller 和 Service 不应该直接操作 Hub 连接对象，而是通过 <code>IHubContext&lt;THub&gt;</code> 向指定 Group 推送。
       </p>
 
       <LessonCode
-        code={`public class WorkItemService
+        code={`// 在已有的 WorkItemService 中增量修改（保留 IWorkItemService 契约）
+
+// 1. 构造函数注入 IHubContext：
+using Microsoft.AspNetCore.SignalR;
+using TaskHub.Api.Hubs;
+
+private readonly IHubContext<ProjectNotificationHub> _hubContext;
+
+public WorkItemService(
+    /* 已有依赖 */,
+    IHubContext<ProjectNotificationHub> hubContext)
 {
-    private readonly TaskHubDbContext _context;
-    private readonly IHubContext<ProjectNotificationHub> _hubContext;
+    _hubContext = hubContext;
+}
 
-    public WorkItemService(
-        TaskHubDbContext context,
-        IHubContext<ProjectNotificationHub> hubContext)
-    {
-        _context = context;
-        _hubContext = hubContext;
-    }
+// 2. 状态变更保存成功后追加推送（不替换已有方法）：
+var dto = new WorkItemSummaryDto(item.Id, item.ProjectId, item.Title, item.Status, null, null);
 
-    public async Task<WorkItemSummaryDto> MoveAsync(string id, WorkItemStatus status, string operatorId)
-    {
-        var item = await _context.WorkItems.FirstOrDefaultAsync(item => item.Id == id);
-        if (item is null)
-            throw new NotFoundException("任务不存在");
+await _hubContext.Clients
+    .Group(ProjectNotificationHub.GetProjectGroup(item.ProjectId))
+    .SendAsync("WorkItemUpdated", dto);
 
-        item.Status = status;
-        item.Touch();
-        await _context.SaveChangesAsync();
-
-        var dto = new WorkItemSummaryDto(item.Id, item.ProjectId, item.Title, item.Status, null, item.DueDate);
-
-        await _hubContext.Clients
-            .Group(ProjectNotificationHub.GetProjectGroup(item.ProjectId))
-            .SendAsync("WorkItemUpdated", dto);
-
-        return dto;
-    }
-}`}
+return dto;`}
         language="csharp"
-        title="通过 IHubContext 推送任务变更"
+        title="在已有 WorkItemService 中追加 SignalR 推送"
       />
 
       <h3>通知事件设计</h3>
@@ -247,15 +269,122 @@ public class ProjectNotificationHub : Hub
         <li>在多实例部署中依赖静态字典保存在线状态。</li>
       </ul>
 
+      <h3>写入 TaskHub.Api — SignalR Hub</h3>
+      <p>
+        把上面的 <code>ProjectNotificationHub</code> 落盘到 <code>TaskHub.Api</code>。
+      </p>
+
+      <LessonCode
+        code={`# 创建目录
+mkdir -p TaskHub.Api/Hubs`}
+        language="bash"
+        title="创建 Hubs 目录"
+      />
+
+      <h4>Hubs/ProjectNotificationHub.cs</h4>
+      <LessonCode
+        code={`using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
+using TaskHub.Infrastructure.Data;
+
+namespace TaskHub.Api.Hubs;
+
+[Authorize]
+public class ProjectNotificationHub : Hub
+{
+    private readonly TaskHubDbContext _context;
+    private readonly ILogger<ProjectNotificationHub> _logger;
+
+    public ProjectNotificationHub(TaskHubDbContext context, ILogger<ProjectNotificationHub> logger)
+    {
+        _context = context;
+        _logger = logger;
+    }
+
+    public override async Task OnConnectedAsync()
+    {
+        var userId = GetUserId();
+        _logger.LogInformation("SignalR connection {ConnectionId} connected for user {UserId}",
+            Context.ConnectionId, userId);
+
+        await Clients.Caller.SendAsync("Connected", new
+        {
+            Context.ConnectionId,
+            UserId = userId
+        });
+
+        await base.OnConnectedAsync();
+    }
+
+    public async Task JoinProject(string projectId)
+    {
+        var userId = GetUserId();
+        var isMember = await _context.ProjectMembers.AnyAsync(member =>
+            member.ProjectId == projectId &&
+            member.UserId == userId &&
+            member.IsActive);
+
+        if (!isMember)
+            throw new HubException("你不是该项目成员");
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, GetProjectGroup(projectId));
+
+        await Clients.Caller.SendAsync("ProjectJoined", new
+        {
+            ProjectId = projectId,
+            JoinedAt = DateTime.UtcNow
+        });
+    }
+
+    public async Task LeaveProject(string projectId)
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, GetProjectGroup(projectId));
+        await Clients.Caller.SendAsync("ProjectLeft", new { ProjectId = projectId });
+    }
+
+    private string GetUserId()
+    {
+        return Context.User?.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? Context.User?.FindFirstValue("sub")
+            ?? throw new HubException("未认证连接");
+    }
+
+    public static string GetProjectGroup(string projectId) => $"project:{projectId}";
+}`}
+        language="csharp"
+        title="Hubs/ProjectNotificationHub.cs"
+      />
+
+      <h4>更新 Program.cs</h4>
+      <LessonCode
+        code={`// 顶部 using：
+using TaskHub.Api.Hubs;
+
+// builder.Services 部分：
+builder.Services.AddSignalR();
+
+// var app = builder.Build(); 之后，MapControllers 附近：
+app.MapHub<ProjectNotificationHub>("/hubs/projects");`}
+        language="csharp"
+        title="Program.cs 注册 SignalR Hub"
+      />
+
+      <p>
+        写完运行 <code>dotnet build TaskHub.Api</code> 确认编译通过。
+        如果编译失败，先检查：<code>Hubs/ProjectNotificationHub.cs</code> 的 <code>namespace</code> 是否为 <code>TaskHub.Api.Hubs</code>、<code>Program.cs</code> 是否写了 <code>using TaskHub.Api.Hubs;</code>。
+      </p>
+
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={
           <p>
-            已能创建 <code>ProjectNotificationHub</code>，让项目成员加入项目 Group，并通过 <code>IHubContext</code> 推送任务变更通知。
+            已创建 <code>Hubs/ProjectNotificationHub.cs</code>，注册到 <code>Program.cs</code>，<code>dotnet build TaskHub.Api</code> 编译通过。
           </p>
         }
-        id="signalr-hub-main"
-        title="完成 TaskHub 项目通知 Hub"
+        id="signalr-hub-write-files"
+        title="将 SignalR Hub 写入 TaskHub.Api"
         onToggleChecklistItem={onToggleChecklistItem}
       />
 

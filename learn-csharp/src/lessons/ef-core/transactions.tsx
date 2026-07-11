@@ -48,7 +48,7 @@ export const EfTransactionsLesson = ({
             .FirstOrDefaultAsync(item => item.Id == workItemId);
 
         if (item is null)
-            throw new NotFoundException("任务不存在");
+            throw new KeyNotFoundException("任务不存在");
 
         var isMember = await _context.ProjectMembers.AnyAsync(member =>
             member.ProjectId == item.ProjectId &&
@@ -96,11 +96,11 @@ export const EfTransactionsLesson = ({
     try
     {
         var project = await _context.Projects
-            .FromSqlRaw("SELECT * FROM Projects WHERE Id = {0} FOR UPDATE", projectId)
+            .FromSqlInterpolated($"SELECT * FROM \"Projects\" WHERE \"Id\" = {projectId} FOR UPDATE")
             .FirstOrDefaultAsync();
 
         if (project is null)
-            throw new NotFoundException("项目不存在");
+            throw new KeyNotFoundException("项目不存在");
 
         var isOwner = await _context.ProjectMembers.AnyAsync(member =>
             member.ProjectId == projectId &&
@@ -155,7 +155,7 @@ public async Task RenameWorkItemAsync(string id, string title)
 {
     var item = await _context.WorkItems.FirstOrDefaultAsync(item => item.Id == id);
     if (item is null)
-        throw new NotFoundException("任务不存在");
+        throw new KeyNotFoundException("任务不存在");
 
     item.Title = title;
 
@@ -165,7 +165,7 @@ public async Task RenameWorkItemAsync(string id, string title)
     }
     catch (DbUpdateConcurrencyException)
     {
-        throw new ConflictException("任务已被其他人修改，请刷新后重试");
+        throw new InvalidOperationException("任务已被其他人修改，请刷新后重试");
     }
 }`}
         language="csharp"
@@ -182,7 +182,7 @@ public async Task RenameWorkItemAsync(string id, string title)
 {
     var item = await _context.WorkItems.FindAsync(id);
     if (item is null)
-        throw new NotFoundException("任务不存在");
+        throw new KeyNotFoundException("任务不存在");
 
     item.DeletedAt = DateTime.UtcNow;
     item.Touch();

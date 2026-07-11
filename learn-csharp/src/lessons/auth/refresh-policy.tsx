@@ -175,21 +175,43 @@ if (!result.Succeeded)
         SignalR 仍然复用 JWT 认证，但浏览器 WebSocket 常把 token 放在查询参数：
       </p>
       <LessonCode
-        code={`options.Events = new JwtBearerEvents
-{
-    OnMessageReceived = context =>
+        code={`// 在上一节已有的 AddJwtBearer 配置中追加 Events（不是另起一段）：
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
     {
-        var accessToken = context.Request.Query["access_token"];
-        var path = context.HttpContext.Request.Path;
-
-                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/projects"))
+        var jwt = builder.Configuration.GetSection("Jwt");
+        options.TokenValidationParameters = new TokenValidationParameters
         {
-            context.Token = accessToken;
-        }
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwt["Issuer"],
+            ValidAudience = jwt["Audience"],
+            ClockSkew = TimeSpan.FromMinutes(1),
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(jwt["Secret"]!))
+        };
 
-        return Task.CompletedTask;
-    }
-};`}
+        // SignalR：浏览器 WebSocket 从查询参数取 token
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+
+                if (!string.IsNullOrEmpty(accessToken)
+                    && path.StartsWithSegments("/hubs/projects"))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            }
+        };
+    });`}
         language="csharp"
         title="从查询参数读取 token"
       />
@@ -199,15 +221,171 @@ if (!result.Succeeded)
         string，生产环境要避免把完整 URL 写入日志。
       </LessonQuote>
 
+      <h3>写入 TaskHub.Api — 刷新令牌与资源级授权</h3>
+      <p>
+        上面的代码片段需要落盘到已有的文件中。本节会修改上一节已创建的 <code>TokenService</code>、<code>AuthService</code>、<code>AuthController</code>，并新增资源级授权 Handler。
+      </p>
+
+      <h4>Models/Requests/RefreshRequest.cs</h4>
+      <LessonCode
+        code={`namespace TaskHub.Api.Models.Requests;
+
+public record RefreshRequest(string RefreshToken);`}
+        language="csharp"
+        title="Models/Requests/RefreshRequest.cs"
+      />
+
+      <h4>更新 Services/TokenService.cs</h4>
+      <p>
+        在上一节的 <code>TokenService</code> 末尾添加 <code>CreateRefreshTokenAsync</code> 方法，并补上需要的 using：
+      </p>
+      <LessonCode
+        code={`// TokenService.cs 顶部 using 补充：
+using System.Security.Cryptography;
+
+// 在 TokenService 类末尾添加：
+public async Task<string> CreateRefreshTokenAsync(string userId)
+{
+    var rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+    var tokenHash = Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(rawToken)));
+
+    _context.RefreshTokens.Add(new RefreshToken
+    {
+        UserId = userId,
+        TokenHash = tokenHash,
+        ExpiresAt = DateTime.UtcNow.AddDays(_jwt.RefreshTokenDays)
+    });
+
+    await _context.SaveChangesAsync();
+    return rawToken;
+}`}
+        language="csharp"
+        title="TokenService.cs — 补充 CreateRefreshTokenAsync"
+      />
+
+      <h4>更新 Services/AuthService.cs</h4>
+      <p>
+        在 <code>AuthService</code> 中添加 <code>RefreshAsync</code> 方法，并把上一节的 <code>LoginAsync</code> 中 <code>RefreshToken: string.Empty</code> 改为真正签发 refresh token：
+      </p>
+      <LessonCode
+        code={`// 1. 把 LoginAsync 的 return 改为：
+var refreshToken = await _tokenService.CreateRefreshTokenAsync(user.Id);
+return new LoginResponse(accessToken, refreshToken);
+
+// 2. 在 AuthService 类末尾添加 RefreshAsync（AuthService.cs 顶部补 using System.Security.Cryptography;）：
+public async Task<LoginResponse> RefreshAsync(string refreshToken)
+{
+    var tokenHash = Convert.ToBase64String(
+        SHA256.HashData(Encoding.UTF8.GetBytes(refreshToken)));
+
+    var existingToken = await _context.RefreshTokens
+        .FirstOrDefaultAsync(t => t.TokenHash == tokenHash);
+
+    if (existingToken is null || !existingToken.IsActive)
+        throw new UnauthorizedAccessException("Refresh Token 无效");
+
+    existingToken.RevokedAt = DateTime.UtcNow;
+    await _context.SaveChangesAsync();
+
+    var user = await _context.Users.FirstAsync(u => u.Id == existingToken.UserId);
+    var newAccessToken = _tokenService.CreateAccessToken(user);
+    var newRefreshToken = await _tokenService.CreateRefreshTokenAsync(user.Id);
+
+    return new LoginResponse(newAccessToken, newRefreshToken);
+}`}
+        language="csharp"
+        title="AuthService.cs — 补充 RefreshAsync 并修改 LoginAsync"
+      />
+
+      <h4>更新 Controllers/AuthController.cs</h4>
+      <p>
+        在 <code>AuthController</code> 中添加刷新端点：
+      </p>
+      <LessonCode
+        code={`[HttpPost("refresh")]
+public async Task<IActionResult> Refresh(RefreshRequest request)
+{
+    var response = await _auth.RefreshAsync(request.RefreshToken);
+    return Ok(response);
+}`}
+        language="csharp"
+        title="AuthController.cs — 补充 Refresh 端点"
+      />
+
+      <h4>Authorization/ProjectOwnerHandler.cs</h4>
+      <LessonCode
+        code={`using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
+using TaskHub.Core.Models;
+using TaskHub.Infrastructure.Data;
+using TaskHub.Infrastructure.Models;
+
+namespace TaskHub.Api.Authorization;
+
+public class ProjectOwnerRequirement : IAuthorizationRequirement { }
+
+public class ProjectOwnerHandler : AuthorizationHandler<ProjectOwnerRequirement, Project>
+{
+    private readonly TaskHubDbContext _context;
+
+    public ProjectOwnerHandler(TaskHubDbContext context)
+    {
+        _context = context;
+    }
+
+    protected override Task HandleRequirementAsync(
+        AuthorizationHandlerContext context,
+        ProjectOwnerRequirement requirement,
+        Project project)
+    {
+        var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? context.User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+
+        var isOwner = _context.ProjectMembers.Any(member =>
+            member.ProjectId == project.Id &&
+            member.UserId == userId &&
+            member.Role == ProjectRole.Owner &&
+            member.IsActive);
+
+        if (isOwner)
+        {
+            context.Succeed(requirement);
+        }
+
+        return Task.CompletedTask;
+    }
+}`}
+        language="csharp"
+        title="Authorization/ProjectOwnerHandler.cs"
+      />
+
+      <h4>更新 Program.cs</h4>
+      <LessonCode
+        code={`// 顶部 using 补充：
+using TaskHub.Api.Authorization;
+
+// builder.Services 部分补充：
+builder.Services.AddScoped<IAuthorizationHandler, ProjectOwnerHandler>();`}
+        language="csharp"
+        title="Program.cs — 注册资源级授权 Handler"
+      />
+
+      <p>
+        写完运行 <code>dotnet build TaskHub.Api</code> 确认编译通过。
+        如果编译失败，先检查：<code>TokenService.cs</code> 是否补了 <code>using System.Security.Cryptography;</code>、<code>ProjectOwnerHandler.cs</code> 是否写了所有 using、<code>Program.cs</code> 是否注册了 <code>ProjectOwnerHandler</code>。
+      </p>
+
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={
           <p>
-            已能设计 Refresh Token 轮换、Role/Permission Policy，并理解 SignalR 查询参数取 token 的安全边界。
+            已在 <code>TokenService</code> 补充 <code>CreateRefreshTokenAsync</code>、在 <code>AuthService</code> 补充 <code>RefreshAsync</code> 并修改 <code>LoginAsync</code> 真正签发 refresh token、在 <code>AuthController</code> 补充 <code>/api/auth/refresh</code> 端点、创建 <code>ProjectOwnerHandler</code> 并注册到 <code>Program.cs</code>，<code>dotnet build TaskHub.Api</code> 编译通过。
           </p>
         }
-        id="auth-refresh-policy-main"
-        title="完成刷新令牌与授权策略主线"
+        id="auth-refresh-policy-write-files"
+        title="将刷新令牌与资源级授权写入 TaskHub.Api"
         onToggleChecklistItem={onToggleChecklistItem}
       />
 

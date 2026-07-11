@@ -146,29 +146,15 @@ connection.onclose((error) => {
       </p>
 
       <LessonCode
-        code={`builder.Logging.AddFilter("Microsoft.AspNetCore.SignalR", LogLevel.Warning);
-builder.Logging.AddFilter("Microsoft.AspNetCore.Http.Connections", LogLevel.Warning);
-
-app.Use(async (context, next) =>
-{
-    if (context.Request.Query.ContainsKey("access_token"))
-    {
-        using (_logger.BeginScope(new Dictionary<string, object>
-        {
-            ["SignalRAccessToken"] = "[REDACTED]"
-        }))
-        {
-            await next();
-        }
-
-        return;
-    }
-
-    await next();
-});`}
+        code={`// 在 Program.cs 的中间件管道中，过滤掉包含 access_token 的请求日志
+builder.Logging.AddFilter("Microsoft.AspNetCore.SignalR", LogLevel.Warning);
+builder.Logging.AddFilter("Microsoft.AspNetCore.Http.Connections", LogLevel.Warning);`}
         language="csharp"
         title="降低日志泄漏风险"
       />
+      <p>
+        生产环境还要确保反向代理、APM 和日志平台不会记录包含 <code>access_token</code> 的完整 URL。查询参数传 JWT 只是浏览器 WebSocket 的无奈之举，服务器端日志要始终脱敏。
+      </p>
 
       <h3>常见误区</h3>
       <ul>

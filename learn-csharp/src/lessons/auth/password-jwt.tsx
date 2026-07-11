@@ -166,9 +166,9 @@ public class PasswordService
       </LessonQuote>
 
       <LessonCode
-        code={`# 本地开发密钥
-dotnet user-secrets init
-dotnet user-secrets set "Jwt:Secret" "a-long-random-secret-at-least-32-bytes"
+        code={`# 本地开发密钥（在 TaskHub 根目录执行）
+dotnet user-secrets init --project TaskHub.Api/TaskHub.Api.csproj
+dotnet user-secrets set "Jwt:Secret" "a-long-random-secret-at-least-32-bytes" --project TaskHub.Api/TaskHub.Api.csproj
 
 # 生产环境环境变量写法
 Jwt__Secret=a-long-random-secret-at-least-32-bytes`}
@@ -185,7 +185,13 @@ Jwt__Secret=a-long-random-secret-at-least-32-bytes`}
 
       <p>注册认证：</p>
       <LessonCode
-        code={`builder.Services
+        code={`// Program.cs 顶部 using：
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+
+// builder.Services 部分：
+builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -259,9 +265,10 @@ builder.Services.AddAuthorization();`}
     var user = new User
     {
         Username = request.Username,
-        Email = request.Email,
-        PasswordHash = _passwordService.Hash(null!, request.Password)
+        Email = request.Email
     };
+
+    user.PasswordHash = _passwordService.Hash(user, request.Password);
 
     _context.Users.Add(user);
     await _context.SaveChangesAsync();
@@ -290,9 +297,9 @@ builder.Services.AddAuthorization();`}
         throw new UnauthorizedAccessException("邮箱或密码错误");
 
     var accessToken = _tokenService.CreateAccessToken(user);
-    var refreshToken = await _tokenService.CreateRefreshTokenAsync(user.Id);
 
-    return new LoginResponse(accessToken, refreshToken);
+    // Refresh Token 在下一节补上，这里先返回空字符串占位
+    return new LoginResponse(accessToken, RefreshToken: string.Empty);
 }`}
         language="csharp"
         title="LoginAsync"
@@ -302,15 +309,259 @@ builder.Services.AddAuthorization();`}
         错误信息不要区分"邮箱不存在"和"密码错误"，避免泄露账号是否存在。
       </LessonQuote>
 
+      <h3>写入 TaskHub.Api — 认证类型</h3>
+      <p>
+        上面的代码片段引用了多个类型，需要逐个落盘到 <code>TaskHub.Api</code>。先创建目录：
+      </p>
+
+      <LessonCode
+        code={`# 创建目录
+mkdir -p TaskHub.Api/Models/Requests`}
+        language="bash"
+        title="创建目录"
+      />
+
+      <h4>Models/Requests/RegisterRequest.cs</h4>
+      <LessonCode
+        code={`namespace TaskHub.Api.Models.Requests;
+
+public record RegisterRequest(string Username, string Email, string Password);`}
+        language="csharp"
+        title="Models/Requests/RegisterRequest.cs"
+      />
+
+      <h4>Models/Requests/LoginRequest.cs</h4>
+      <LessonCode
+        code={`namespace TaskHub.Api.Models.Requests;
+
+public record LoginRequest(string Email, string Password);`}
+        language="csharp"
+        title="Models/Requests/LoginRequest.cs"
+      />
+
+      <h4>Models/Requests/LoginResponse.cs</h4>
+      <LessonCode
+        code={`namespace TaskHub.Api.Models.Requests;
+
+public record LoginResponse(string AccessToken, string RefreshToken);`}
+        language="csharp"
+        title="Models/Requests/LoginResponse.cs"
+      />
+
+      <h4>Services/JwtSettings.cs</h4>
+      <LessonCode
+        code={`namespace TaskHub.Api.Services;
+
+public class JwtSettings
+{
+    public string Issuer { get; set; } = string.Empty;
+    public string Audience { get; set; } = string.Empty;
+    public string Secret { get; set; } = string.Empty;
+    public int AccessTokenMinutes { get; set; } = 15;
+    public int RefreshTokenDays { get; set; } = 7;
+}`}
+        language="csharp"
+        title="Services/JwtSettings.cs"
+      />
+
+      <h4>Services/TokenService.cs</h4>
+      <LessonCode
+        code={`using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+using TaskHub.Infrastructure.Data;
+using TaskHub.Infrastructure.Models;
+
+namespace TaskHub.Api.Services;
+
+public class TokenService
+{
+    private readonly JwtSettings _jwt;
+    private readonly TaskHubDbContext _context;
+
+    public TokenService(IOptions<JwtSettings> jwt, TaskHubDbContext context)
+    {
+        _jwt = jwt.Value;
+        _context = context;
+    }
+
+    public string CreateAccessToken(User user)
+    {
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, user.Id),
+            new(ClaimTypes.NameIdentifier, user.Id),
+            new(ClaimTypes.Name, user.Username),
+            new(ClaimTypes.Email, user.Email)
+        };
+
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwt.Secret));
+        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+        var token = new JwtSecurityToken(
+            issuer: _jwt.Issuer,
+            audience: _jwt.Audience,
+            claims: claims,
+            expires: DateTime.UtcNow.AddMinutes(_jwt.AccessTokenMinutes),
+            signingCredentials: credentials);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+}`}
+        language="csharp"
+        title="Services/TokenService.cs"
+      />
+
+      <h4>Services/PasswordService.cs</h4>
+      <LessonCode
+        code={`using Microsoft.AspNetCore.Identity;
+using TaskHub.Infrastructure.Models;
+
+namespace TaskHub.Api.Services;
+
+public class PasswordService
+{
+    private readonly PasswordHasher<User> _hasher = new();
+
+    public string Hash(User user, string password)
+    {
+        return _hasher.HashPassword(user, password);
+    }
+
+    public bool Verify(User user, string password)
+    {
+        var result = _hasher.VerifyHashedPassword(user, user.PasswordHash, password);
+        return result is PasswordVerificationResult.Success
+            or PasswordVerificationResult.SuccessRehashNeeded;
+    }
+}`}
+        language="csharp"
+        title="Services/PasswordService.cs"
+      />
+
+      <h4>Services/AuthService.cs</h4>
+      <LessonCode
+        code={`using Microsoft.EntityFrameworkCore;
+using TaskHub.Api.Models.Requests;
+using TaskHub.Infrastructure.Data;
+using TaskHub.Infrastructure.Models;
+
+namespace TaskHub.Api.Services;
+
+public class AuthService
+{
+    private readonly TaskHubDbContext _context;
+    private readonly PasswordService _passwordService;
+    private readonly TokenService _tokenService;
+
+    public AuthService(TaskHubDbContext context, PasswordService passwordService, TokenService tokenService)
+    {
+        _context = context;
+        _passwordService = passwordService;
+        _tokenService = tokenService;
+    }
+
+    public async Task<User> RegisterAsync(RegisterRequest request)
+    {
+        var emailExists = await _context.Users.AnyAsync(u => u.Email == request.Email);
+        if (emailExists)
+            throw new ArgumentException("该邮箱已被注册");
+
+        var user = new User
+        {
+            Username = request.Username,
+            Email = request.Email
+        };
+        user.PasswordHash = _passwordService.Hash(user, request.Password);
+
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync();
+        return user;
+    }
+
+    public async Task<LoginResponse> LoginAsync(LoginRequest request)
+    {
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+        if (user is null || !user.IsActive)
+            throw new UnauthorizedAccessException("邮箱或密码错误");
+
+        if (!_passwordService.Verify(user, request.Password))
+            throw new UnauthorizedAccessException("邮箱或密码错误");
+
+        var accessToken = _tokenService.CreateAccessToken(user);
+
+        // Refresh Token 在下一节补上
+        return new LoginResponse(accessToken, RefreshToken: string.Empty);
+    }
+}`}
+        language="csharp"
+        title="Services/AuthService.cs"
+      />
+
+      <h4>Controllers/AuthController.cs</h4>
+      <LessonCode
+        code={`using Microsoft.AspNetCore.Mvc;
+using TaskHub.Api.Models.Requests;
+using TaskHub.Api.Services;
+
+namespace TaskHub.Api.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+public class AuthController : ControllerBase
+{
+    private readonly AuthService _auth;
+
+    public AuthController(AuthService auth) => _auth = auth;
+
+    [HttpPost("register")]
+    public async Task<IActionResult> Register(RegisterRequest request)
+    {
+        var user = await _auth.RegisterAsync(request);
+        return Ok(new { user.Id, user.Username, user.Email });
+    }
+
+    [HttpPost("login")]
+    public async Task<IActionResult> Login(LoginRequest request)
+    {
+        var response = await _auth.LoginAsync(request);
+        return Ok(response);
+    }
+}`}
+        language="csharp"
+        title="Controllers/AuthController.cs"
+      />
+
+      <h4>更新 Program.cs</h4>
+      <LessonCode
+        code={`// 1. 文件顶部添加 using：
+using TaskHub.Api.Services;
+
+// 2. builder.Services 部分添加：
+builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
+builder.Services.AddScoped<PasswordService>();
+builder.Services.AddScoped<TokenService>();
+builder.Services.AddScoped<AuthService>();`}
+        language="csharp"
+        title="Program.cs 注册认证服务"
+      />
+
+      <p>
+        写完运行 <code>dotnet build TaskHub.Api</code> 确认编译通过。
+        如果编译失败，先检查：<code>TokenService.cs</code> 是否写了所有 using（特别是 <code>System.IdentityModel.Tokens.Jwt</code> 和 <code>Microsoft.IdentityModel.Tokens</code>）、<code>Program.cs</code> 是否注册了 <code>TokenService</code>、<code>PasswordService</code> 和 <code>AuthService</code>。
+      </p>
+
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={
           <p>
-            已能实现密码哈希校验、JWT Bearer 配置和登录签发 Access Token 的主流程。
+            已创建认证相关的 DTO（<code>RegisterRequest</code>、<code>LoginRequest</code>、<code>LoginResponse</code>）、配置类（<code>JwtSettings</code>）、服务（<code>TokenService</code>、<code>PasswordService</code>、<code>AuthService</code>）、<code>AuthController</code>（注册 <code>/api/auth/register</code> 和 <code>/api/auth/login</code>），注册到 <code>Program.cs</code>，<code>dotnet build TaskHub.Api</code> 编译通过。
           </p>
         }
-        id="auth-password-jwt-main"
-        title="完成密码登录与 JWT 主线"
+        id="auth-password-jwt-write-files"
+        title="将认证类型写入 TaskHub.Api"
         onToggleChecklistItem={onToggleChecklistItem}
       />
 

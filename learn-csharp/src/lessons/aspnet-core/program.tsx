@@ -50,7 +50,7 @@ export const AspnetProgramLesson = ({
           ["modules/user/user.service.ts", "Services/UserService.cs"],
           ["modules/user/dto/、entities/", "Models/Dtos/、Models/Entities/"],
           ["common/guards/、interceptors/", "Middleware/、Attributes/"],
-          ["shared/database/", "Data/ApplicationDbContext.cs"],
+          ["shared/database/", "Data/TaskHubDbContext.cs"],
         ]}
       />
 
@@ -67,8 +67,8 @@ export const AspnetProgramLesson = ({
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddDbContext<ApplicationDbContext>(
-    options => options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
+builder.Services.AddDbContext<TaskHubDbContext>(
+    options => options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer();
 

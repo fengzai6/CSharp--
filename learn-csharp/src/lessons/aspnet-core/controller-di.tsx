@@ -95,7 +95,7 @@ public class ProjectsController : ControllerBase
         leftCode={`@Controller('auth')
 export class AuthController {
   @Post('login')
-  async login(@Body() dto: LoginDto) {
+  async login(@Body() dto: LoginRequest) {
     return this.authService.login(dto);
   }
 }`}
@@ -113,7 +113,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
-    public async Task<ActionResult> Login(LoginDto dto)
+    public async Task<ActionResult> Login(LoginRequest dto)
     {
         return Ok(await _authService.LoginAsync(dto));
     }
@@ -323,12 +323,173 @@ public async Task<IActionResult> ArchiveProject(string id) { ... }`}
         </li>
       </ul>
 
-      <TeacherTask title="Phase 1 主线任务">
-        <p>
-          在 TaskHub 中完成 Phase 1：实现 Projects / WorkItems CRUD — Controller + Service + DTO
-          三层分离，并为项目归档、任务创建等操作预留授权策略入口。
-        </p>
-      </TeacherTask>
+      <h3>写入 TaskHub.Api — WorkItems CRUD</h3>
+      <p>
+        在 <code>TaskHub.Api</code> 中创建目录和文件，实现一个可跑通的 WorkItems CRUD（先不做 Projects，避免跨度太大）。Controller 模式默认没有启用，需要先在 <code>Program.cs</code> 注册。
+      </p>
+
+      <LessonCode
+        code={`# 创建目录
+mkdir -p TaskHub.Api/Controllers
+mkdir -p TaskHub.Api/Services
+mkdir -p TaskHub.Api/Models/Requests`}
+        language="bash"
+        title="创建目录"
+      />
+
+      <h4>Models/Requests/CreateWorkItemRequest.cs</h4>
+      <LessonCode
+        code={`namespace TaskHub.Api.Models.Requests;
+
+public record CreateWorkItemRequest(string ProjectId, string Title);`}
+        language="csharp"
+        title="Models/Requests/CreateWorkItemRequest.cs"
+      />
+
+      <h4>Services/IWorkItemService.cs</h4>
+      <LessonCode
+        code={`using TaskHub.Core.Models;
+using TaskHub.Api.Models.Requests;
+
+namespace TaskHub.Api.Services;
+
+public interface IWorkItemService
+{
+    Task<List<WorkItem>> GetAllAsync(int page = 1, int pageSize = 20, string? search = null);
+    Task<WorkItem?> GetByIdAsync(string id);
+    Task<WorkItem> CreateAsync(CreateWorkItemRequest request);
+}`}
+        language="csharp"
+        title="Services/IWorkItemService.cs"
+      />
+
+      <h4>Services/WorkItemService.cs</h4>
+      <LessonCode
+        code={`using TaskHub.Core.Models;
+using TaskHub.Api.Models.Requests;
+
+namespace TaskHub.Api.Services;
+
+public class WorkItemService : IWorkItemService
+{
+    // ponytail: 内存列表，EF Core 接入后替换为 DbContext
+    private readonly List<WorkItem> _items = new();
+
+    public Task<List<WorkItem>> GetAllAsync(int page = 1, int pageSize = 20, string? search = null)
+    {
+        var query = _items.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(i => i.Title.Contains(search, StringComparison.OrdinalIgnoreCase));
+        var result = query.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        return Task.FromResult(result);
+    }
+
+    public Task<WorkItem?> GetByIdAsync(string id)
+    {
+        return Task.FromResult(_items.FirstOrDefault(i => i.Id == id));
+    }
+
+    public Task<WorkItem> CreateAsync(CreateWorkItemRequest request)
+    {
+        var item = new WorkItem(Guid.NewGuid().ToString(), request.ProjectId, request.Title);
+        _items.Add(item);
+        return Task.FromResult(item);
+    }
+}`}
+        language="csharp"
+        title="Services/WorkItemService.cs"
+      />
+
+      <h4>Controllers/WorkItemsController.cs</h4>
+      <LessonCode
+        code={`using Microsoft.AspNetCore.Mvc;
+using TaskHub.Api.Models.Requests;
+using TaskHub.Api.Services;
+
+namespace TaskHub.Api.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+public class WorkItemsController : ControllerBase
+{
+    private readonly IWorkItemService _workItemService;
+
+    public WorkItemsController(IWorkItemService workItemService)
+    {
+        _workItemService = workItemService;
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null)
+    {
+        return Ok(await _workItemService.GetAllAsync(page, pageSize, search));
+    }
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(string id)
+    {
+        var item = await _workItemService.GetByIdAsync(id);
+        if (item == null) return NotFound();
+        return Ok(item);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreateWorkItemRequest request)
+    {
+        var item = await _workItemService.CreateAsync(request);
+        return CreatedAtAction(nameof(GetById), new { id = item.Id }, item);
+    }
+}`}
+        language="csharp"
+        title="Controllers/WorkItemsController.cs"
+      />
+
+      <h4>更新 Program.cs</h4>
+      <p>
+        在 <code>Program.cs</code> 中完成三处修改，对照文件中已有代码的位置：
+      </p>
+
+      <LessonCode
+        code={`// 1. 文件顶部（var builder 之前）添加 using：
+using TaskHub.Api.Services;
+
+// 2. var builder = WebApplication.CreateBuilder(args); 之后添加：
+builder.Services.AddControllers();
+builder.Services.AddSingleton<IWorkItemService, WorkItemService>();  // ponytail: 内存演示用 Singleton，见下方说明
+
+// 3. var app = builder.Build(); 之后，UseHttpsRedirection 之前添加：
+app.MapControllers();`}
+        language="csharp"
+        title="Program.cs 完整修改"
+      />
+
+      <LessonQuote>
+        这里 <code>WorkItemService</code> 用 <code>AddSingleton</code> 注册，因为内部的 <code>_items</code> 列表是实例字段。如果用 <code>AddScoped</code>，每个 HTTP 请求会得到新实例，POST 创建的任务在下一个 GET 请求里就看不见了。后续接入 EF Core 的 <code>DbContext</code> 后，必须改回 <code>AddScoped</code> —— <code>DbContext</code> 不是线程安全的，必须每个请求一个实例。
+      </LessonQuote>
+
+      <h4>清理模板</h4>
+      <p>
+        删除模板的 weather forecast 代码（<code>var summaries</code>、<code>app.MapGet("/weatherforecast", ...)</code>、<code>WeatherForecast</code> record），保持 <code>Program.cs</code> 干净。
+      </p>
+
+      <p>
+        全部完成后运行 <code>dotnet build TaskHub.Api</code> 确认编译通过。
+      </p>
+
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已创建 <code>Controllers/</code>、<code>Services/</code>、<code>Models/Requests/</code> 目录，写入 <code>CreateWorkItemRequest</code>、<code>IWorkItemService</code>、<code>WorkItemService</code>、<code>WorkItemsController</code>，更新 <code>Program.cs</code> 注册 Controller 和 Service，删除模板 weather forecast 代码，<code>dotnet build TaskHub.Api</code> 编译通过。
+          </p>
+        }
+        id="aspnet-controller-di-write-files"
+        title="写入 WorkItems CRUD 到 TaskHub.Api"
+        onToggleChecklistItem={onToggleChecklistItem}
+      />
 
     </LessonShell>
   );

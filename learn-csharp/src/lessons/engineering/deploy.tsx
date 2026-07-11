@@ -35,7 +35,11 @@ export const EngineeringDeployLesson = ({
         .NET 7+ 内置 Rate Limiting，无需额外安装包。通过策略区分不同场景：全局默认限额、认证用户更高限额、登录端点更严格限额。
       </p>
       <LessonCode
-        code={`// Program.cs
+        code={`// Program.cs 顶部 using：
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
+
+// builder.Services 部分：
 builder.Services.AddRateLimiter(rateLimiterOptions =>
 {
     // 默认策略：每 IP 每秒 10 请求。注意：命名策略需要绑定到端点才会生效。
@@ -53,7 +57,7 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
     // 认证用户更高限额
     rateLimiterOptions.AddPolicy("authed", context =>
         RateLimitPartition.GetFixedWindowLimiter(
-            context.HttpContext.User.Identity?.Name ?? "",
+            context.User.Identity?.Name ?? "",
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 50,
@@ -63,7 +67,7 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
     // 登录端点：每 IP 每分钟 5 次
     rateLimiterOptions.AddPolicy("login", context =>
         RateLimitPartition.GetFixedWindowLimiter(
-            context.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "",
+            context.Connection.RemoteIpAddress?.ToString() ?? "",
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 5,
@@ -90,7 +94,7 @@ app.MapControllers().RequireRateLimiting("default");`}
       <LessonCode
         code={`[HttpPost("login")]
 [EnableRateLimiting("login")]  // 使用指定策略
-public async Task<IActionResult> Login(LoginDto dto) { ... }`}
+public async Task<IActionResult> Login(LoginRequest dto) { ... }`}
         language="csharp"
         title="在端点应用限流策略"
       />
@@ -143,7 +147,7 @@ ENTRYPOINT ["dotnet", "TaskHub.Api.dll"]`}
       </p>
       <LessonCode
         code={`# 完整发布命令
-dotnet publish -c Release -r linux-x64 \\
+dotnet publish TaskHub.Api/TaskHub.Api.csproj -c Release -r linux-x64 \\
     -p:PublishAot=true \\
     -p:StripSymbols=true \\
     -p:DebuggerSupport=false \\
@@ -195,7 +199,7 @@ dotnet publish -c Release -r linux-x64 \\
 dotnet publish TaskHub.Api/TaskHub.Api.csproj -c Release -o ./publish
 
 # 发布 + 自包含（发布产物包含 .NET 运行时，不要求目标机器预装 runtime）
-dotnet publish -c Release -r linux-x64 --self-contained -o ./publish`}
+dotnet publish TaskHub.Api/TaskHub.Api.csproj -c Release -r linux-x64 --self-contained -o ./publish`}
         language="bash"
         title="普通发布与自包含发布"
       />
@@ -286,7 +290,7 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
     // 认证用户更高限额
     rateLimiterOptions.AddPolicy("authed", context =>
         RateLimitPartition.GetFixedWindowLimiter(
-            context.HttpContext.User.Identity?.Name ?? "",
+            context.User.Identity?.Name ?? "",
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 50,
@@ -296,7 +300,7 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
     // 登录端点：每 IP 每分钟 5 次
     rateLimiterOptions.AddPolicy("login", context =>
         RateLimitPartition.GetFixedWindowLimiter(
-            context.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "",
+            context.Connection.RemoteIpAddress?.ToString() ?? "",
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 5,
@@ -324,7 +328,7 @@ public class AuthController : ControllerBase
 {
     [HttpPost("login")]
     [EnableRateLimiting("login")]  // 应用登录限流策略
-    public async Task<IActionResult> Login(LoginDto dto)
+    public async Task<IActionResult> Login(LoginRequest dto)
     {
         // 登录逻辑
         return Ok(new { token = "..." });
@@ -332,7 +336,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("register")]
     // MapControllers().RequireRateLimiting("default") 会应用默认策略
-    public async Task<IActionResult> Register(RegisterDto dto)
+    public async Task<IActionResult> Register(RegisterRequest dto)
     {
         // 注册逻辑
         return Ok();
@@ -355,7 +359,7 @@ public class AuthController : ControllerBase
 for i in {1..10}; do
   curl -X POST http://localhost:5000/api/auth/login \\
     -H "Content-Type: application/json" \\
-    -d '{"username":"test","password":"test"}' \\
+    -d '{"email":"test@example.com","password":"test"}' \\
     -w "\\nStatus: %{http_code}\\n"
 done
 
@@ -454,7 +458,7 @@ docker images taskhub:1.0
 docker run -d -p 8080:8080 --name taskhub-container taskhub:1.0
 
 # 测试应用
-curl http://localhost:8080/health
+curl http://localhost:8080/health/live
 
 # 查看日志
 docker logs taskhub-container
@@ -510,7 +514,7 @@ docker rm taskhub-container`}
 
         <LessonCode
           code={`# 本地 AOT 发布
-dotnet publish -c Release -r linux-x64 \\
+dotnet publish TaskHub.Api/TaskHub.Api.csproj -c Release -r linux-x64 \\
     -p:PublishAot=true \\
     -p:StripSymbols=true \\
     -p:DebuggerSupport=false \\
@@ -570,11 +574,11 @@ ENTRYPOINT ["./TaskHub.Api"]`}
         <h4>参考答案</h4>
         <LessonCode
           code={`# 普通发布对比
-dotnet publish -c Release -o ./publish/normal
+dotnet publish TaskHub.Api/TaskHub.Api.csproj -c Release -o ./publish/normal
 ls -lh ./publish/normal  # 查看文件大小
 
 # AOT 发布对比
-dotnet publish -c Release -r linux-x64 -p:PublishAot=true -o ./publish/aot
+dotnet publish TaskHub.Api/TaskHub.Api.csproj -c Release -r linux-x64 -p:PublishAot=true -o ./publish/aot
 ls -lh ./publish/aot
 
 # 构建两个镜像对比
@@ -609,15 +613,18 @@ docker stats taskhub-normal taskhub-aot`}
         </LessonQuote>
 
         <LessonCode
-          code={`// 使用 JsonSerializerContext 支持 AOT
-[JsonSerializable(typeof(LoginDto))]
+          code={`// AppJsonSerializerContext.cs
+using System.Text.Json.Serialization;
+
+[JsonSerializable(typeof(LoginRequest))]
 [JsonSerializable(typeof(WorkItemSummaryDto))]
 public partial class AppJsonSerializerContext : JsonSerializerContext { }
 
-// Program.cs 中配置
-builder.Services.ConfigureHttpJsonOptions(options =>
+// Program.cs 中配置（Controller 项目）
+builder.Services.AddControllers().AddJsonOptions(options =>
 {
-    options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Default);
+    options.JsonSerializerOptions.TypeInfoResolverChain.Insert(
+        0, AppJsonSerializerContext.Default);
 });`}
           language="csharp"
           title="AOT JSON 序列化配置"

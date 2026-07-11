@@ -365,12 +365,295 @@ using (var scope = app.Services.CreateScope())
         <li>软删除用全局过滤器时有哪些边界情况？</li>
       </ul>
 
-      <TeacherTask title="Phase 2 主线任务">
-        <p>
-          在 TaskHub 中完成 Phase 2：接入 EF Core + PostgreSQL，创建 DbContext 和
-          Migration，跑通第一次 <code>dotnet ef database update</code>。
-        </p>
-      </TeacherTask>
+      <h3>写入 TaskHub.Infrastructure</h3>
+      <p>
+        上面的代码片段最终要落盘到 <code>TaskHub.Infrastructure</code> 中。先清理模板、安装包、创建目录：
+      </p>
+
+      <LessonCode
+        code={`# 1. 删除模板文件
+rm TaskHub.Infrastructure/Class1.cs
+
+# 2. 安装 NuGet 包（如果上面还没执行）
+dotnet add TaskHub.Infrastructure/TaskHub.Infrastructure.csproj package Npgsql.EntityFrameworkCore.PostgreSQL
+dotnet add TaskHub.Api/TaskHub.Api.csproj package Microsoft.EntityFrameworkCore.Design
+
+# 3. 创建目录
+mkdir -p TaskHub.Infrastructure/Data
+mkdir -p TaskHub.Infrastructure/Models`}
+        language="bash"
+        title="清理模板、安装包、创建目录"
+      />
+
+      <p>
+        然后逐个创建文件。<code>Models/</code> 下的实体使用 <code>TaskHub.Infrastructure.Models</code> 命名空间，
+        引用 Core 的枚举时需要 <code>using TaskHub.Core.Models;</code>。
+        <code>Data/TaskHubDbContext.cs</code> 使用 <code>TaskHub.Infrastructure.Data</code> 命名空间。
+      </p>
+
+      <p>
+        注意：<code>TaskHub.Core</code> 中的 <code>WorkItem</code> 是学习 C# 类型时的简化版本，这里在 Infrastructure 中重新定义了带导航属性的 EF 实体版本，后续以 Infrastructure 版本为准。
+      </p>
+
+      <h4>Models/BaseEntity.cs</h4>
+      <LessonCode
+        code={`namespace TaskHub.Infrastructure.Models;
+
+public abstract class BaseEntity
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? UpdatedAt { get; set; }
+    public DateTime? DeletedAt { get; set; }
+
+    public abstract void Touch();
+}`}
+        language="csharp"
+        title="Models/BaseEntity.cs"
+      />
+
+      <h4>Models/User.cs</h4>
+      <LessonCode
+        code={`namespace TaskHub.Infrastructure.Models;
+
+public class User : BaseEntity
+{
+    public string Username { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string PasswordHash { get; set; } = string.Empty;
+    public bool IsActive { get; set; } = true;
+
+    public List<ProjectMember> ProjectMembers { get; set; } = new();
+    public List<WorkItem> AssignedWorkItems { get; set; } = new();
+    public List<WorkItemComment> Comments { get; set; } = new();
+    public List<RefreshToken> RefreshTokens { get; set; } = new();
+
+    public string DisplayName => Username;
+
+    public override void Touch()
+    {
+        UpdatedAt = DateTime.UtcNow;
+    }
+}`}
+        language="csharp"
+        title="Models/User.cs"
+      />
+
+      <h4>Models/Project.cs</h4>
+      <LessonCode
+        code={`namespace TaskHub.Infrastructure.Models;
+
+public class Project : BaseEntity
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public DateTime? ArchivedAt { get; set; }
+
+    public List<ProjectMember> Members { get; set; } = new();
+    public List<WorkItem> WorkItems { get; set; } = new();
+
+    public override void Touch()
+    {
+        UpdatedAt = DateTime.UtcNow;
+    }
+}`}
+        language="csharp"
+        title="Models/Project.cs"
+      />
+
+      <h4>Models/WorkItem.cs</h4>
+      <LessonCode
+        code={`using TaskHub.Core.Models;
+
+namespace TaskHub.Infrastructure.Models;
+
+public class WorkItem : BaseEntity
+{
+    public string ProjectId { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public WorkItemStatus Status { get; set; } = WorkItemStatus.Todo;
+    public string? AssigneeId { get; set; }
+    public DateTime? DueDate { get; set; }
+
+    public Project Project { get; set; } = null!;
+    public User? Assignee { get; set; }
+    public List<WorkItemComment> Comments { get; set; } = new();
+
+    public override void Touch()
+    {
+        UpdatedAt = DateTime.UtcNow;
+    }
+}`}
+        language="csharp"
+        title="Models/WorkItem.cs"
+      />
+
+      <h4>Models/ProjectMember.cs</h4>
+      <LessonCode
+        code={`using TaskHub.Core.Models;
+
+namespace TaskHub.Infrastructure.Models;
+
+public class ProjectMember : BaseEntity
+{
+    public string ProjectId { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
+    public ProjectRole Role { get; set; } = ProjectRole.Member;
+    public DateTime JoinedAt { get; set; } = DateTime.UtcNow;
+    public bool IsActive { get; set; } = true;
+
+    public Project Project { get; set; } = null!;
+    public User User { get; set; } = null!;
+
+    public override void Touch()
+    {
+        UpdatedAt = DateTime.UtcNow;
+    }
+}`}
+        language="csharp"
+        title="Models/ProjectMember.cs"
+      />
+
+      <h4>Models/WorkItemComment.cs</h4>
+      <LessonCode
+        code={`namespace TaskHub.Infrastructure.Models;
+
+public class WorkItemComment : BaseEntity
+{
+    public string WorkItemId { get; set; } = string.Empty;
+    public string AuthorId { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+
+    public WorkItem WorkItem { get; set; } = null!;
+    public User Author { get; set; } = null!;
+
+    public override void Touch()
+    {
+        UpdatedAt = DateTime.UtcNow;
+    }
+}`}
+        language="csharp"
+        title="Models/WorkItemComment.cs"
+      />
+
+      <h4>Models/RefreshToken.cs</h4>
+      <LessonCode
+        code={`namespace TaskHub.Infrastructure.Models;
+
+public class RefreshToken : BaseEntity
+{
+    public string UserId { get; set; } = string.Empty;
+    public string TokenHash { get; set; } = string.Empty;
+    public DateTime ExpiresAt { get; set; }
+    public DateTime? RevokedAt { get; set; }
+    public bool IsExpired => DateTime.UtcNow >= ExpiresAt;
+    public bool IsRevoked => RevokedAt is not null;
+    public bool IsActive => !IsExpired && !IsRevoked;
+
+    public User User { get; set; } = null!;
+
+    public override void Touch()
+    {
+        UpdatedAt = DateTime.UtcNow;
+    }
+}`}
+        language="csharp"
+        title="Models/RefreshToken.cs"
+      />
+
+      <h4>Data/TaskHubDbContext.cs</h4>
+      <LessonCode
+        code={`using Microsoft.EntityFrameworkCore;
+using TaskHub.Infrastructure.Models;
+
+namespace TaskHub.Infrastructure.Data;
+
+public class TaskHubDbContext : DbContext
+{
+    public TaskHubDbContext(DbContextOptions<TaskHubDbContext> options)
+        : base(options) { }
+
+    public DbSet<User> Users => Set<User>();
+    public DbSet<Project> Projects => Set<Project>();
+    public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
+    public DbSet<WorkItem> WorkItems => Set<WorkItem>();
+    public DbSet<WorkItemComment> WorkItemComments => Set<WorkItemComment>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(TaskHubDbContext).Assembly);
+
+        modelBuilder.Entity<User>()
+            .HasQueryFilter(u => u.IsActive);
+
+        modelBuilder.Entity<Project>()
+            .HasQueryFilter(project => project.ArchivedAt == null);
+
+        modelBuilder.Entity<WorkItem>()
+            .HasQueryFilter(item => item.DeletedAt == null);
+    }
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.Properties<string>()
+            .HaveMaxLength(500);
+    }
+}`}
+        language="csharp"
+        title="Data/TaskHubDbContext.cs"
+      />
+
+      <h4>更新 Program.cs</h4>
+      <p>
+        在 <code>TaskHub.Api</code> 的 <code>Program.cs</code> 中完成两处修改：
+      </p>
+
+      <LessonCode
+        code={`// 1. 文件顶部添加 using：
+using Microsoft.EntityFrameworkCore;
+using TaskHub.Infrastructure.Data;
+
+// 2. builder.Services 部分添加：
+builder.Services.AddDbContext<TaskHubDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));`}
+        language="csharp"
+        title="Program.cs 注册 DbContext"
+      />
+
+      <p>
+        同时在 <code>appsettings.json</code> 中添加连接字符串（确保本机已安装 PostgreSQL）：
+      </p>
+
+      <LessonCode
+        code={`{
+  "ConnectionStrings": {
+    "Default": "Host=localhost;Database=taskhub;Username=postgres;Password=postgres"
+  }
+}`}
+        language="json"
+        title="appsettings.json"
+      />
+
+      <p>
+        写完运行 <code>dotnet build TaskHub.Api</code> 确认编译通过。
+        如果编译失败，先检查：每个文件的 <code>namespace</code> 是否正确、<code>WorkItem.cs</code> 和 <code>ProjectMember.cs</code> 是否写了 <code>using TaskHub.Core.Models;</code>、<code>TaskHubDbContext.cs</code> 是否写了 <code>using TaskHub.Infrastructure.Models;</code>、<code>Program.cs</code> 是否写了 <code>using Microsoft.EntityFrameworkCore;</code> 和 <code>using TaskHub.Infrastructure.Data;</code>。
+      </p>
+
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已删除 <code>Class1.cs</code>，创建 <code>Data/</code> 和 <code>Models/</code> 目录，写入所有实体和 <code>TaskHubDbContext</code>，注册 DbContext 到 <code>Program.cs</code>，配置连接字符串，<code>dotnet build TaskHub.Api</code> 编译通过。
+          </p>
+        }
+        id="ef-dbcontext-write-files"
+        title="将实体与 DbContext 写入 TaskHub.Infrastructure"
+        onToggleChecklistItem={onToggleChecklistItem}
+      />
     </LessonShell>
   );
 };

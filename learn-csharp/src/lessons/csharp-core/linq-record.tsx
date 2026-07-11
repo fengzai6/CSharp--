@@ -237,11 +237,54 @@ var workItemDtos = await context.WorkItems
         title="LINQ to EF Core"
       />
 
-      <TeacherTask title="TaskHub 本节产物">
-        <p>
-          本节结束后，<code>TaskHub.Core</code> 中已经有适合接口返回的任务摘要 DTO 和分页 DTO。后面的 Controller、EF Core 查询和 OpenAPI 示例都应该复用这些命名，不再切回无关的用户列表演示。
-        </p>
-      </TeacherTask>
+      <h3>写入 TaskHub.Core</h3>
+      <p>
+        把上面的 record DTO 写入 <code>TaskHub.Core/Models/</code> 目录。两个文件都放在 <code>TaskHub.Core.Models</code> 命名空间下，与上一节的枚举和实体在同一命名空间。
+      </p>
+
+      <h4>Models/WorkItemSummaryDto.cs</h4>
+      <LessonCode
+        code={`using TaskHub.Core.Models;
+
+namespace TaskHub.Core.Models;
+
+public record WorkItemSummaryDto(
+    string Id,
+    string ProjectId,
+    string Title,
+    WorkItemStatus Status,
+    string? AssigneeName,
+    DateTime? DueDate);`}
+        language="csharp"
+        title="Models/WorkItemSummaryDto.cs"
+      />
+
+      <h4>Models/PagedResult.cs</h4>
+      <LessonCode
+        code={`namespace TaskHub.Core.Models;
+
+public record PagedResult<T>(IEnumerable<T> Data, int Total, int Page);`}
+        language="csharp"
+        title="Models/PagedResult.cs"
+      />
+
+      <p>
+        写完运行 <code>dotnet build TaskHub.Core</code> 确认编译通过。
+        项目启用了 <code>ImplicitUsings</code>，所以 <code>IEnumerable&lt;T&gt;</code> 和 <code>DateTime</code> 等常用类型会自动可用，不需要额外 <code>using</code>。<code>WorkItemSummaryDto.cs</code>
+        中的 <code>using TaskHub.Core.Models;</code> 是冗余的但无妨（同命名空间不报错），清掉也行，保留也行。
+      </p>
+
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已把 <code>WorkItemSummaryDto</code> 和 <code>PagedResult&lt;T&gt;</code> 写入 <code>Models/</code> 目录，<code>dotnet build TaskHub.Core</code> 编译通过。
+          </p>
+        }
+        id="csharp-linq-write-files"
+        title="写入 DTO 到 TaskHub.Core"
+        onToggleChecklistItem={onToggleChecklistItem}
+      />
     </LessonShell>
   );
 };

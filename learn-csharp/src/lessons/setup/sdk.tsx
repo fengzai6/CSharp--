@@ -24,7 +24,7 @@ export const SetupSdkLesson = ({
       <ol>
         <li>机器上装了哪个 .NET SDK</li>
         <li>
-          <code>.sln</code> 和 <code>.csproj</code> 是什么
+          <code>.sln/.slnx</code> 和 <code>.csproj</code> 是什么
         </li>
         <li>如何创建、运行、调试项目</li>
         <li>如何安装 NuGet 包</li>

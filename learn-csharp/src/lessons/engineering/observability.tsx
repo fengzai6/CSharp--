@@ -119,10 +119,11 @@ this.logger.verbose()           _logger.LogTrace()`}
 
       <h4>使用 Serilog（推荐，生产级）</h4>
       <LessonCode
-        code={`dotnet add package Serilog
-dotnet add package Serilog.Sinks.Console
-dotnet add package Serilog.Sinks.File
-dotnet add package Serilog.Sinks.Seq   # 集中日志平台`}
+        code={`dotnet add TaskHub.Api/TaskHub.Api.csproj package Serilog.AspNetCore
+dotnet add TaskHub.Api/TaskHub.Api.csproj package Serilog.Sinks.Console
+dotnet add TaskHub.Api/TaskHub.Api.csproj package Serilog.Sinks.File
+dotnet add TaskHub.Api/TaskHub.Api.csproj package Serilog.Sinks.Seq
+dotnet add TaskHub.Api/TaskHub.Api.csproj package Serilog.Enrichers.Environment`}
         language="bash"
         title="安装 Serilog"
       />
@@ -134,7 +135,10 @@ dotnet add package Serilog.Sinks.Seq   # 集中日志平台`}
         生产级配置通过 Enrich 注入机器名、环境名、应用名等上下文，并按天滚动文件、限制保留天数：
       </p>
       <LessonCode
-        code={`Log.Logger = new LoggerConfiguration()
+        code={`using Serilog;
+using Serilog.Events;
+
+Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Debug()
     .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
@@ -156,7 +160,7 @@ dotnet add package Serilog.Sinks.Seq   # 集中日志平台`}
       <h3>缓存</h3>
       <h4>内存缓存</h4>
       <LessonCode
-        code={`dotnet add package Microsoft.Extensions.Caching.Memory`}
+        code={`dotnet add TaskHub.Api/TaskHub.Api.csproj package Microsoft.Extensions.Caching.Memory`}
         language="bash"
         title="安装内存缓存"
       />
@@ -167,13 +171,22 @@ dotnet add package Serilog.Sinks.Seq   # 集中日志平台`}
         通过 <code>IMemoryCache</code> 实现“先查缓存、未命中再查库并回填”的常见模式：
       </p>
       <LessonCode
-        code={`public class InMemoryCacheService
+        code={`// 独立示意类型，不落到 TaskHub 主线
+public record ProjectDashboardDto(string ProjectId, int TotalTasks, int CompletedTasks);
+public interface IProjectQueryService
+{
+    Task<ProjectDashboardDto?> GetDashboardAsync(string projectId);
+}
+
+public class InMemoryCacheService
 {
     private readonly IMemoryCache _cache;
+    private readonly IProjectQueryService _projectQueryService;
 
-    public InMemoryCacheService(IMemoryCache cache)
+    public InMemoryCacheService(IMemoryCache cache, IProjectQueryService projectQueryService)
     {
         _cache = cache;
+        _projectQueryService = projectQueryService;
     }
 
     public T? Get<T>(string key)
@@ -215,7 +228,7 @@ dotnet add package Serilog.Sinks.Seq   # 集中日志平台`}
 
       <h4>分布式缓存（Redis）</h4>
       <LessonCode
-        code={`dotnet add package Microsoft.Extensions.Caching.StackExchangeRedis`}
+        code={`dotnet add TaskHub.Api/TaskHub.Api.csproj package Microsoft.Extensions.Caching.StackExchangeRedis`}
         language="bash"
         title="安装 Redis 缓存"
       />
@@ -226,6 +239,22 @@ dotnet add package Serilog.Sinks.Seq   # 集中日志平台`}
       <p>
         注册 Redis 后，业务层换用 <code>IDistributedCache</code>，使用方式与内存缓存高度一致，差别是值需要序列化为字符串：
       </p>
+
+      <LessonCode
+        code={`{
+  "ConnectionStrings": {
+    "Default": "Host=localhost;Database=taskhub;Username=postgres;Password=postgres",
+    "Redis": "localhost:6379"
+  }
+}`}
+        language="json"
+        title="appsettings.json（按需添加 Redis）"
+      />
+
+      <LessonQuote>
+        没有启动 Redis 时，不要注册 <code>AddStackExchangeRedisCache</code> 和健康检查里的 <code>AddRedis</code>，否则启动会直接失败。先完成内存缓存，再按需切换到 Redis。
+      </LessonQuote>
+
       <LessonCode
         code={`// Program.cs
 builder.Services.AddStackExchangeRedisCache(options =>
@@ -234,14 +263,16 @@ builder.Services.AddStackExchangeRedisCache(options =>
     options.InstanceName = "TaskHub:";  // 前缀隔离
 });
 
-// 使用
+// 使用（复用上面定义的 ProjectDashboardDto 和 IProjectQueryService）
 public class ProjectDashboardService
 {
     private readonly IDistributedCache _cache;
+    private readonly IProjectQueryService _projectQueryService;
 
-    public ProjectDashboardService(IDistributedCache cache)
+    public ProjectDashboardService(IDistributedCache cache, IProjectQueryService projectQueryService)
     {
         _cache = cache;
+        _projectQueryService = projectQueryService;
     }
 
     public async Task<ProjectDashboardDto?> GetWithCacheAsync(string projectId)
@@ -272,9 +303,9 @@ public class ProjectDashboardService
 
       <h3>健康检查</h3>
       <LessonCode
-        code={`dotnet add package AspNetCore.HealthChecks.Uris
-dotnet add package AspNetCore.HealthChecks.NpgSql
-dotnet add package AspNetCore.HealthChecks.Redis`}
+        code={`dotnet add TaskHub.Api/TaskHub.Api.csproj package AspNetCore.HealthChecks.Uris
+dotnet add TaskHub.Api/TaskHub.Api.csproj package AspNetCore.HealthChecks.NpgSql
+dotnet add TaskHub.Api/TaskHub.Api.csproj package AspNetCore.HealthChecks.Redis`}
         language="bash"
         title="安装健康检查包"
       />
@@ -283,7 +314,10 @@ dotnet add package AspNetCore.HealthChecks.Redis`}
       </p>
       <p>注册时为每个依赖设置失败状态（Degraded / Unhealthy）：</p>
       <LessonCode
-        code={`// Program.cs
+        code={`// Program.cs — 顶部 using：
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+
+// builder.Services 部分：
 builder.Services.AddHealthChecks()
     .AddNpgSql(
         builder.Configuration.GetConnectionString("Default"),
@@ -345,7 +379,10 @@ app.MapHealthChecks("/health/live", ...);    // 存活检查（最简单）`}
         <code>IHttpClientFactory</code> 或 typed client 统一管理连接池、超时、基础地址和默认请求头。
       </p>
       <LessonCode
-        code={`builder.Services.AddHttpClient<IProfileClient, ProfileClient>(client =>
+        code={`// 外部服务返回的用户资料 DTO（独立示例，不落到 TaskHub 主线）
+public record UserProfile(string Id, string Username, string Email);
+
+builder.Services.AddHttpClient<IProfileClient, ProfileClient>(client =>
 {
     client.BaseAddress = new Uri("https://profile.example.com");
     client.Timeout = TimeSpan.FromSeconds(5);
@@ -389,7 +426,7 @@ public class ProfileClient : IProfileClient
       </p>
       <LessonCode
         code={`// 启用 EF Core 日志查看生成的 SQL（开发环境）
-builder.Services.AddDbContext<AppDbContext>(options =>
+builder.Services.AddDbContext<TaskHubDbContext>(options =>
 {
     options.UseNpgsql(connectionString);
     options.EnableSensitiveDataLogging();  // 开发环境启用
@@ -454,13 +491,14 @@ public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] in
               </p>
             ),
             code: `// 安装包
-dotnet add package Serilog.AspNetCore
-dotnet add package Serilog.Sinks.Console
-dotnet add package Serilog.Sinks.File
-dotnet add package Serilog.Enrichers.Environment
+dotnet add TaskHub.Api/TaskHub.Api.csproj package Serilog.AspNetCore
+dotnet add TaskHub.Api/TaskHub.Api.csproj package Serilog.Sinks.Console
+dotnet add TaskHub.Api/TaskHub.Api.csproj package Serilog.Sinks.File
+dotnet add TaskHub.Api/TaskHub.Api.csproj package Serilog.Enrichers.Environment
 
 // Program.cs
 using Serilog;
+using Serilog.Events;
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Debug()
@@ -502,6 +540,13 @@ finally
 public class WorkItemService
 {
     private readonly ILogger<WorkItemService> _logger;
+    private readonly IWorkItemRepository _workItemRepository;
+
+    public WorkItemService(ILogger<WorkItemService> logger, IWorkItemRepository workItemRepository)
+    {
+        _logger = logger;
+        _workItemRepository = workItemRepository;
+    }
 
     public async Task MoveAsync(string workItemId, WorkItemStatus status, string operatorId)
     {
@@ -510,7 +555,8 @@ public class WorkItemService
 
         try
         {
-            await _workItemRepository.MoveAsync(workItemId, status, operatorId);
+            // ... 业务逻辑（省略已有依赖注入）
+            await Task.CompletedTask;
             _logger.LogInformation("任务 {WorkItemId} 状态变更成功", workItemId);
         }
         catch (Exception ex)
@@ -539,7 +585,7 @@ public class WorkItemService
               </p>
             ),
             code: `// 1. 内存缓存
-dotnet add package Microsoft.Extensions.Caching.Memory
+dotnet add TaskHub.Api/TaskHub.Api.csproj package Microsoft.Extensions.Caching.Memory
 
 // Program.cs
 builder.Services.AddMemoryCache();
@@ -593,7 +639,7 @@ public async Task<ProjectDashboardDto?> GetDashboardAsync(string projectId)
 }
 
 // 2. 切换到 Redis
-dotnet add package Microsoft.Extensions.Caching.StackExchangeRedis
+dotnet add TaskHub.Api/TaskHub.Api.csproj package Microsoft.Extensions.Caching.StackExchangeRedis
 
 // Program.cs
 builder.Services.AddStackExchangeRedisCache(options =>
@@ -664,8 +710,13 @@ public class RedisCacheService
               </p>
             ),
             code: `// 安装包
-dotnet add package AspNetCore.HealthChecks.NpgSql
-dotnet add package AspNetCore.HealthChecks.Redis
+dotnet add TaskHub.Api/TaskHub.Api.csproj package AspNetCore.HealthChecks.NpgSql
+dotnet add TaskHub.Api/TaskHub.Api.csproj package AspNetCore.HealthChecks.Redis
+
+// Program.cs 顶部 using：
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using System.Text.Json;
 
 // Program.cs
 builder.Services.AddHealthChecks()
@@ -714,9 +765,9 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 // 自定义健康检查示例
 public class DatabaseHealthCheck : IHealthCheck
 {
-    private readonly AppDbContext _context;
+    private readonly TaskHubDbContext _context;
 
-    public DatabaseHealthCheck(AppDbContext context)
+    public DatabaseHealthCheck(TaskHubDbContext context)
     {
         _context = context;
     }
@@ -808,9 +859,9 @@ var items = await _context.WorkItems
 
 // 如何排查 N+1
 // 1. 启用 EF Core 日志查看生成的 SQL
-builder.Services.AddDbContext<AppDbContext>(options =>
+builder.Services.AddDbContext<TaskHubDbContext>(options =>
 {
-    options.UseSqlServer(connectionString);
+    options.UseNpgsql(connectionString);
     options.EnableSensitiveDataLogging();  // 开发环境启用
     options.LogTo(Console.WriteLine, LogLevel.Information);
 });

@@ -23,7 +23,7 @@ export const SetupSolutionLesson = ({
       <h3>解决方案与多项目结构</h3>
       <p>
         真实项目通常不是单个 <code>.csproj</code>，而是一个{" "}
-        <code>.sln</code> 管理多个项目。
+        <code>.sln/.slnx</code> 管理多个项目。
       </p>
 
       <LessonCode
@@ -44,7 +44,7 @@ dotnet sln add TaskHub.Infrastructure/TaskHub.Infrastructure.csproj`}
 
       <p>
         这段命令分三组看：先创建一个解决方案目录，再生成三个独立项目，最后把三个
-        <code>.csproj</code> 加入 <code>.sln</code> 管理。<code>.sln</code>{" "}
+        <code>.csproj</code> 加入 <code>.sln/.slnx</code> 管理。<code>.sln/.slnx</code>{" "}
         不包含业务代码，它只是让 IDE、<code>dotnet build</code> 和团队成员知道“这些项目属于同一个工作区”。
       </p>
 
@@ -52,10 +52,10 @@ dotnet sln add TaskHub.Infrastructure/TaskHub.Infrastructure.csproj`}
         headers={["命令", "作用"]}
         rows={[
           ["mkdir / cd", "创建并进入解决方案根目录"],
-          ["dotnet new sln -n TaskHub", "生成 TaskHub.sln，用来管理多个项目"],
+          ["dotnet new sln -n TaskHub", "生成 TaskHub.sln/.slnx，用来管理多个项目"],
           ["dotnet new webapi", "生成 HTTP 入口项目，放 Program.cs 和 API 端点"],
           ["dotnet new classlib", "生成类库项目，放业务层或基础设施层代码"],
-          ["dotnet sln add", "把 .csproj 注册到 .sln，方便统一构建和 IDE 展示"],
+          ["dotnet sln add", "把 .csproj 注册到 .sln/.slnx，方便统一构建和 IDE 展示"],
         ]}
       />
 
@@ -64,7 +64,7 @@ dotnet sln add TaskHub.Infrastructure/TaskHub.Infrastructure.csproj`}
         description={
           <p>
             已创建 Solution、Api/Core/Infrastructure 三个项目，并把项目加入
-            <code>.sln</code> 管理。
+            <code>.sln/.slnx</code> 管理。
           </p>
         }
         id="setup-solution-projects"
@@ -76,7 +76,7 @@ dotnet sln add TaskHub.Infrastructure/TaskHub.Infrastructure.csproj`}
 
       <LessonCode
         code={`TaskHub/
-├── TaskHub.sln
+├── TaskHub.slnx
 ├── TaskHub.Api/              # HTTP API、Program.cs、Controller/Endpoint
 ├── TaskHub.Core/             # 业务模型、接口、纯业务逻辑
 └── TaskHub.Infrastructure/   # EF Core、Redis、外部服务实现`}
@@ -158,7 +158,7 @@ Core 不依赖其他项目`}
 
       <ul>
         <li>
-          看到 <code>.sln</code> 就以为它等同于项目代码；实际 <code>.sln</code>{" "}
+          看到 <code>.sln/.slnx</code> 就以为它等同于项目代码；实际 <code>.sln/.slnx</code>{" "}
           只是管理多个 <code>.csproj</code> 的容器。
         </li>
         <li>
@@ -170,7 +170,7 @@ Core 不依赖其他项目`}
 
       <ul>
         <li>
-          <code>.sln</code> 和 <code>.csproj</code> 分别解决什么问题？
+          <code>.sln/.slnx</code> 和 <code>.csproj</code> 分别解决什么问题？
         </li>
         <li>
           为什么 <code>Core</code> 项目不应该依赖 <code>Infrastructure</code>？

@@ -261,6 +261,116 @@ public class CacheService<TKey, TValue>
         </p>
       </TeacherTask>
 
+      <h3>写入 TaskHub.Core</h3>
+      <p>
+        上面所有代码片段最终要落盘到 <code>TaskHub.Core</code> 中。先把模板文件清理掉并创建目录：
+      </p>
+
+      <LessonCode
+        code={`# 1. 删除模板文件
+rm TaskHub.Core/Class1.cs
+
+# 2. 创建目录
+mkdir -p TaskHub.Core/Models
+mkdir -p TaskHub.Core/Interfaces`}
+        language="bash"
+        title="清理模板并创建目录"
+      />
+
+      <p>然后逐个创建文件（复制以下完整代码到对应文件即可）：</p>
+
+      <h4>Models/WorkItemStatus.cs</h4>
+      <LessonCode
+        code={`namespace TaskHub.Core.Models;
+
+public enum WorkItemStatus { Todo = 0, InProgress = 1, Done = 2, Archived = 3 }
+
+public enum ProjectRole { Owner = 0, Maintainer = 1, Member = 2 }`}
+        language="csharp"
+        title="Models/WorkItemStatus.cs"
+      />
+
+      <h4>Models/ProjectPermission.cs</h4>
+      <LessonCode
+        code={`namespace TaskHub.Core.Models;
+
+[Flags]
+public enum ProjectPermission
+{
+    None = 0,
+    ReadWorkItems = 1,
+    CreateWorkItems = 2,
+    ManageMembers = 4,
+    ArchiveProject = 8
+}`}
+        language="csharp"
+        title="Models/ProjectPermission.cs"
+      />
+
+      <h4>Models/WorkItem.cs</h4>
+      <LessonCode
+        code={`namespace TaskHub.Core.Models;
+
+public class WorkItem
+{
+    private string _title = string.Empty;
+
+    public string Title
+    {
+        get => _title;
+        set => _title = value.Trim();
+    }
+
+    public string Id { get; init; }
+    public string ProjectId { get; init; }
+    public string? AssigneeId { get; set; }
+    public WorkItemStatus Status { get; private set; } = WorkItemStatus.Todo;
+
+    public WorkItem(string id, string projectId, string title)
+    {
+        Id = id;
+        ProjectId = projectId;
+        Title = title;
+    }
+
+    public virtual void MoveTo(WorkItemStatus nextStatus) => Status = nextStatus;
+}`}
+        language="csharp"
+        title="Models/WorkItem.cs"
+      />
+
+      <h4>Interfaces/IWorkItemRepository.cs</h4>
+      <LessonCode
+        code={`using TaskHub.Core.Models;
+
+namespace TaskHub.Core.Interfaces;
+
+public interface IWorkItemRepository
+{
+    Task<WorkItem?> GetByIdAsync(string id, CancellationToken cancellationToken = default);
+    Task<List<WorkItem>> GetByProjectAsync(string projectId, CancellationToken cancellationToken = default);
+}`}
+        language="csharp"
+        title="Interfaces/IWorkItemRepository.cs"
+      />
+
+      <p>
+        写完运行 <code>dotnet build TaskHub.Core</code> 确认编译通过。
+        如果编译失败，先检查：每个文件的 <code>namespace</code> 是否正确、枚举类是否用了 <code>enum</code> 关键字、<code>IWorkItemRepository.cs</code> 是否写了 <code>using TaskHub.Core.Models;</code>。
+      </p>
+
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已删除 <code>Class1.cs</code>，创建 <code>Models/</code> 和 <code>Interfaces/</code> 目录，并将上文的枚举、类、接口代码写入对应文件，每个文件都有正确的 <code>namespace</code>，<code>dotnet build TaskHub.Core</code> 编译通过。
+          </p>
+        }
+        id="csharp-types-write-files"
+        title="将类型写入 TaskHub.Core"
+        onToggleChecklistItem={onToggleChecklistItem}
+      />
+
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={

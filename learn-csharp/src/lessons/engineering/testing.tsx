@@ -76,11 +76,17 @@ export const EngineeringTestingLesson = ({
       <LessonCode
         code={`# 创建测试项目
 dotnet new xunit -n TaskHub.UnitTests
-dotnet add package Moq
-dotnet add package FluentAssertions
+dotnet add TaskHub.UnitTests/TaskHub.UnitTests.csproj package Moq
+dotnet add TaskHub.UnitTests/TaskHub.UnitTests.csproj package FluentAssertions
+
+# 引用被测试的业务项目
+dotnet add TaskHub.UnitTests/TaskHub.UnitTests.csproj reference TaskHub.Core/TaskHub.Core.csproj
+
+# 把测试项目加入解决方案
+dotnet sln add TaskHub.UnitTests/TaskHub.UnitTests.csproj
 
 # 运行测试
-dotnet test`}
+dotnet test TaskHub.UnitTests/TaskHub.UnitTests.csproj`}
         language="bash"
         title="创建单元测试项目"
       />
@@ -88,7 +94,7 @@ dotnet test`}
       <p>
         这组命令先创建 xUnit 测试项目，再安装 Mock 和断言库，最后用{" "}
         <code>dotnet test</code> 验证测试项目能跑起来。真实项目中还要把测试项目加入
-        <code>.sln</code>，并引用被测试的业务项目，例如 <code>TaskHub.Core</code>。
+        <code>.sln/.slnx</code>，并引用被测试的业务项目，例如 <code>TaskHub.Core</code>。
       </p>
 
       <p>
@@ -97,70 +103,53 @@ dotnet test`}
         <code>[InlineData]</code> 用于参数化测试。
       </p>
       <LessonCode
-        code={`using Moq;
-using FluentAssertions;
+        code={`using FluentAssertions;
+using TaskHub.Core.Models;
 
-public class WorkItemServiceTests
+[Trait("Category", "Unit")]
+public class WorkItemTests
 {
-    private readonly Mock<IWorkItemRepository> _workItemRepositoryMock;
-    private readonly Mock<IProjectMemberService> _projectMemberServiceMock;
-    private readonly WorkItemService _workItemService;
-
-    public WorkItemServiceTests()
-    {
-        _workItemRepositoryMock = new Mock<IWorkItemRepository>();
-        _projectMemberServiceMock = new Mock<IProjectMemberService>();
-        _workItemService = new WorkItemService(
-            _workItemRepositoryMock.Object,
-            _projectMemberServiceMock.Object);
-    }
-
     [Fact]  // 类似 @Test
-    public async Task MoveAsync_ShouldChangeStatusWhenOperatorIsProjectMember()
+    public void MoveTo_ShouldChangeStatus()
     {
         // Arrange
         var item = new WorkItem("item-1", "project-1", "接入登录");
-
-        _workItemRepositoryMock.Setup(r => r.GetByIdAsync("item-1", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(item);
-        _projectMemberServiceMock.Setup(s => s.IsActiveMemberAsync("project-1", "user-1"))
-            .ReturnsAsync(true);
+        item.Status.Should().Be(WorkItemStatus.Todo);
 
         // Act
-        var result = await _workItemService.MoveAsync("item-1", WorkItemStatus.InProgress, "user-1");
+        item.MoveTo(WorkItemStatus.InProgress);
 
         // Assert
-        result.Status.Should().Be(WorkItemStatus.InProgress);
-
-        _workItemRepositoryMock.Verify(
-            r => r.SaveAsync(item, It.IsAny<CancellationToken>()), Times.Once);
+        item.Status.Should().Be(WorkItemStatus.InProgress);
     }
 
     [Fact]
-    public async Task MoveAsync_ShouldThrowWhenOperatorIsNotProjectMember()
+    public void MoveTo_ShouldAllowProgression()
     {
         var item = new WorkItem("item-1", "project-1", "接入登录");
-        _workItemRepositoryMock.Setup(r => r.GetByIdAsync("item-1", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(item);
-        _projectMemberServiceMock.Setup(s => s.IsActiveMemberAsync("project-1", "user-1"))
-            .ReturnsAsync(false);
 
-        Func<Task> act = async () => await _workItemService.MoveAsync("item-1", WorkItemStatus.Done, "user-1");
+        item.MoveTo(WorkItemStatus.InProgress);
+        item.MoveTo(WorkItemStatus.Done);
 
-        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        item.Status.Should().Be(WorkItemStatus.Done);
     }
 
     [Theory]  // 参数化测试
-    [InlineData(WorkItemStatus.Todo, WorkItemStatus.InProgress, true)]
-    [InlineData(WorkItemStatus.InProgress, WorkItemStatus.Done, true)]
-    [InlineData(WorkItemStatus.Done, WorkItemStatus.Todo, false)]
-    public void CanMoveStatus(WorkItemStatus current, WorkItemStatus next, bool expected)
+    [InlineData(WorkItemStatus.Todo, WorkItemStatus.InProgress)]
+    [InlineData(WorkItemStatus.InProgress, WorkItemStatus.Done)]
+    [InlineData(WorkItemStatus.Done, WorkItemStatus.Archived)]
+    public void MoveTo_ShouldAcceptValidTransitions(WorkItemStatus current, WorkItemStatus next)
     {
-        WorkItemStatusPolicy.CanMove(current, next).Should().Be(expected);
+        var item = new WorkItem("item-1", "project-1", "测试任务");
+        item.MoveTo(current);
+
+        item.MoveTo(next);
+
+        item.Status.Should().Be(next);
     }
 }`}
         language="csharp"
-        title="WorkItemService 单元测试"
+        title="WorkItem 单元测试"
       />
 
       <h3>集成测试</h3>
@@ -169,9 +158,42 @@ public class WorkItemServiceTests
         启动真实的应用管道（路由、中间件、DI），通过 <code>HttpClient</code>{" "}
         发起请求，相当于 supertest 的角色。
       </p>
+
       <LessonCode
-        code={`using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.DependencyInjection;
+        code={`# 创建集成测试项目
+dotnet new xunit -n TaskHub.IntegrationTests
+dotnet add TaskHub.IntegrationTests/TaskHub.IntegrationTests.csproj package Microsoft.AspNetCore.Mvc.Testing
+dotnet add TaskHub.IntegrationTests/TaskHub.IntegrationTests.csproj package FluentAssertions
+dotnet add TaskHub.IntegrationTests/TaskHub.IntegrationTests.csproj package Testcontainers.PostgreSQL
+
+# 引用被测试的启动项目（WebApplicationFactory<Program> 需要）
+dotnet add TaskHub.IntegrationTests/TaskHub.IntegrationTests.csproj reference TaskHub.Api/TaskHub.Api.csproj
+
+# 把测试项目加入解决方案
+dotnet sln add TaskHub.IntegrationTests/TaskHub.IntegrationTests.csproj`}
+        language="bash"
+        title="创建集成测试项目并安装依赖"
+      />
+
+      <p>
+        为了让 <code>WebApplicationFactory&lt;Program&gt;</code> 在测试项目中可见，需要在 <code>TaskHub.Api/Program.cs</code> 末尾补一句，把顶层语句隐式生成的 <code>Program</code> 类暴露出来：
+      </p>
+
+      <LessonCode
+        code={`// TaskHub.Api/Program.cs 末尾添加：
+public partial class Program { }`}
+        language="csharp"
+        title="暴露 Program 类给测试项目"
+      />
+
+      <LessonCode
+        code={`using System.Net;
+using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
+using FluentAssertions;
+using Microsoft.AspNetCore.Mvc.Testing;
+using TaskHub.Core.Models;
 
 public class WorkItemsControllerIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
 {
@@ -188,14 +210,14 @@ public class WorkItemsControllerIntegrationTests : IClassFixture<WebApplicationF
     public async Task CreateWorkItem_ReturnsCreated()
     {
         var content = new StringContent(
-            JsonSerializer.Serialize(new { projectId = "project-1", title = "接入登录", dueDate = DateTime.UtcNow.AddDays(3) }),
+            JsonSerializer.Serialize(new { projectId = "project-1", title = "接入登录" }),
             Encoding.UTF8,
             "application/json");
 
         var response = await _client.PostAsync("/api/work-items", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var result = await response.Content.ReadFromJsonAsync<WorkItemSummaryDto>();
+        var result = await response.Content.ReadFromJsonAsync<WorkItem>();
         result.Should().NotBeNull();
         result!.Title.Should().Be("接入登录");
     }
@@ -213,11 +235,11 @@ public class WorkItemsControllerIntegrationTests : IClassFixture<WebApplicationF
 
       <h3>测试运行命令</h3>
       <LessonCode
-        code={`dotnet test                          # 运行所有测试
-dotnet test --filter "Category=Unit" # 按分类运行
-dotnet test --filter "FullyQualifiedName~WorkItemServiceTests" # 按类名
-dotnet test --collect:"XPlat Code Coverage" # 生成覆盖率
-dotnet test --logger "console;verbosity=detailed" # 详细输出`}
+        code={`dotnet test TaskHub.UnitTests/TaskHub.UnitTests.csproj                          # 运行单元测试
+	dotnet test TaskHub.UnitTests/TaskHub.UnitTests.csproj --filter "Category=Unit" # 按分类运行
+	dotnet test TaskHub.UnitTests/TaskHub.UnitTests.csproj --filter "FullyQualifiedName~WorkItemTests" # 按类名
+	dotnet test TaskHub.UnitTests/TaskHub.UnitTests.csproj --collect:"XPlat Code Coverage" # 生成覆盖率
+	dotnet test TaskHub.UnitTests/TaskHub.UnitTests.csproj --logger "console;verbosity=detailed" # 详细输出`}
         language="bash"
         title="dotnet test 常用命令"
       />
@@ -233,7 +255,7 @@ dotnet test --logger "console;verbosity=detailed" # 详细输出`}
       </LessonQuote>
       <LessonCode
         code={`# 安装
-dotnet add package Testcontainers.PostgreSQL`}
+dotnet add TaskHub.IntegrationTests/TaskHub.IntegrationTests.csproj package Testcontainers.PostgreSQL`}
         language="bash"
         title="安装 Testcontainers"
       />
@@ -272,7 +294,7 @@ public class WorkItemsControllerIntegrationTests : IAsyncLifetime
         _factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
-                builder.UseSetting("Database:ConnectionString",
+                builder.UseSetting("ConnectionStrings:Default",
                     _postgres.GetConnectionString());
             });
         _client = _factory.CreateClient();

@@ -326,48 +326,144 @@ var item = await _context.WorkItems
         <li>为什么项目成员关系推荐显式中间实体而不是 skip navigation？</li>
       </ul>
 
-      <LessonStep
-        title="实战：TaskHub 关系建模与高效查询"
-        steps={[
-          {
-            title: "建模 ProjectMember 成员关系",
-            content: <p>创建 <code>ProjectMember</code> 连接实体，配置 Project 和 User 之间的多对多关系。</p>,
-            code: `public class ProjectMember : BaseEntity
-{
-    public string ProjectId { get; set; } = string.Empty;
-    public string UserId { get; set; } = string.Empty;
-    public ProjectRole Role { get; set; } = ProjectRole.Member;
-    public DateTime JoinedAt { get; set; } = DateTime.UtcNow;
+      <h3>写入 TaskHub.Infrastructure — 关系配置</h3>
+      <p>
+        上面的 <code>IEntityTypeConfiguration&lt;T&gt;</code> 配置类要落盘到 <code>TaskHub.Infrastructure</code>，<code>ApplyConfigurationsFromAssembly</code> 才能自动发现并加载它们。
+      </p>
 
-    public Project Project { get; set; } = null!;
-    public User User { get; set; } = null!;
-}`,
-            codeLanguage: "csharp",
-            codeTitle: "ProjectMember",
-            checkpoints: ["使用联合主键 ProjectId + UserId", "保留 Role 和 JoinedAt", "为 UserId 建索引以查询某个用户加入的项目"],
-          },
-          {
-            title: "实现任务列表投影查询",
-            content: <p>用 <code>AsNoTracking()</code>、分页和 DTO 投影实现任务列表接口。</p>,
-            code: `var items = await _context.WorkItems
-    .AsNoTracking()
-    .Where(item => item.ProjectId == projectId)
-    .OrderByDescending(item => item.UpdatedAt ?? item.CreatedAt)
-    .Skip((page - 1) * pageSize)
-    .Take(pageSize)
-    .Select(item => new WorkItemSummaryDto(
-        item.Id,
-        item.ProjectId,
-        item.Title,
-        item.Status,
-        item.Assignee == null ? null : item.Assignee.Username,
-        item.DueDate))
-    .ToListAsync();`,
-            codeLanguage: "csharp",
-            codeTitle: "任务列表查询",
-            checkpoints: ["只读查询使用 AsNoTracking", "分页在 ToListAsync 前完成", "返回 DTO 而不是完整实体图"],
-          },
-        ]}
+      <LessonCode
+        code={`# 创建目录
+mkdir -p TaskHub.Infrastructure/Data/Configurations`}
+        language="bash"
+        title="创建 Configurations 目录"
+      />
+
+      <p>
+        每个配置文件放在 <code>Data/Configurations/</code> 下，命名空间为 <code>TaskHub.Infrastructure.Data.Configurations</code>。
+        注意 <code>ProjectMemberConfiguration</code> 用 <code>HasKey</code> 指定了 <code>ProjectId + UserId</code> 联合主键，这会覆盖 <code>BaseEntity</code> 继承来的 <code>Id</code> 作为主键。<code>Id</code> 字段仍然存在（用于审计），但数据库主键是联合主键。
+      </p>
+
+      <h4>Data/Configurations/WorkItemConfiguration.cs</h4>
+      <LessonCode
+        code={`using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using TaskHub.Infrastructure.Models;
+
+namespace TaskHub.Infrastructure.Data.Configurations;
+
+public class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
+{
+    public void Configure(EntityTypeBuilder<WorkItem> builder)
+    {
+        builder.HasOne(item => item.Project)
+            .WithMany(project => project.WorkItems)
+            .HasForeignKey(item => item.ProjectId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(item => new { item.ProjectId, item.Status });
+    }
+}`}
+        language="csharp"
+        title="Data/Configurations/WorkItemConfiguration.cs"
+      />
+
+      <h4>Data/Configurations/ProjectMemberConfiguration.cs</h4>
+      <LessonCode
+        code={`using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using TaskHub.Infrastructure.Models;
+
+namespace TaskHub.Infrastructure.Data.Configurations;
+
+public class ProjectMemberConfiguration : IEntityTypeConfiguration<ProjectMember>
+{
+    public void Configure(EntityTypeBuilder<ProjectMember> builder)
+    {
+        builder.HasKey(member => new { member.ProjectId, member.UserId });
+
+        builder.HasOne(member => member.Project)
+            .WithMany(project => project.Members)
+            .HasForeignKey(member => member.ProjectId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(member => member.User)
+            .WithMany(user => user.ProjectMembers)
+            .HasForeignKey(member => member.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(member => member.UserId);
+    }
+}`}
+        language="csharp"
+        title="Data/Configurations/ProjectMemberConfiguration.cs"
+      />
+
+      <h4>Data/Configurations/WorkItemCommentConfiguration.cs</h4>
+      <LessonCode
+        code={`using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using TaskHub.Infrastructure.Models;
+
+namespace TaskHub.Infrastructure.Data.Configurations;
+
+public class WorkItemCommentConfiguration : IEntityTypeConfiguration<WorkItemComment>
+{
+    public void Configure(EntityTypeBuilder<WorkItemComment> builder)
+    {
+        builder.HasOne(comment => comment.WorkItem)
+            .WithMany(item => item.Comments)
+            .HasForeignKey(comment => comment.WorkItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(comment => comment.Author)
+            .WithMany(user => user.Comments)
+            .HasForeignKey(comment => comment.AuthorId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}`}
+        language="csharp"
+        title="Data/Configurations/WorkItemCommentConfiguration.cs"
+      />
+
+      <h4>Data/Configurations/RefreshTokenConfiguration.cs</h4>
+      <LessonCode
+        code={`using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using TaskHub.Infrastructure.Models;
+
+namespace TaskHub.Infrastructure.Data.Configurations;
+
+public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
+{
+    public void Configure(EntityTypeBuilder<RefreshToken> builder)
+    {
+        builder.HasIndex(token => token.TokenHash).IsUnique();
+
+        builder.HasOne(token => token.User)
+            .WithMany(user => user.RefreshTokens)
+            .HasForeignKey(token => token.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}`}
+        language="csharp"
+        title="Data/Configurations/RefreshTokenConfiguration.cs"
+      />
+
+      <p>
+        写完运行 <code>dotnet build TaskHub.Api</code> 确认编译通过。
+        如果编译失败，先检查：每个文件的 <code>namespace</code> 是否为 <code>TaskHub.Infrastructure.Data.Configurations</code>、是否写了 <code>using Microsoft.EntityFrameworkCore.Metadata.Builders;</code>（<code>EntityTypeBuilder</code> 来自这里）。
+      </p>
+
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已创建 <code>Data/Configurations/</code> 目录，写入 <code>WorkItemConfiguration</code>、<code>ProjectMemberConfiguration</code>、<code>WorkItemCommentConfiguration</code>、<code>RefreshTokenConfiguration</code> 四个配置类，<code>dotnet build TaskHub.Api</code> 编译通过。
+          </p>
+        }
+        id="ef-relationships-write-configs"
+        title="将关系配置写入 TaskHub.Infrastructure"
+        onToggleChecklistItem={onToggleChecklistItem}
       />
     </LessonShell>
   );

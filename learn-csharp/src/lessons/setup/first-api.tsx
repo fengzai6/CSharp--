@@ -51,17 +51,83 @@ export const SetupFirstApiLesson = ({
         title="预期输出"
       />
 
-      <p>访问 Swagger：</p>
+      <h3>为 API 添加文档 UI</h3>
+      <p>
+        .NET 9+ 模板默认只生成 OpenAPI JSON（地址 <code>/openapi/v1.json</code>），不内置文档 UI。
+        要看到 Swagger 那样的可视化页面，需要额外装一个 UI 包。有两种主流选择：
+      </p>
 
+      <h4>方案一：Swashbuckle（经典 Swagger UI，地址 /swagger）</h4>
+      <p>安装包：</p>
       <LessonCode
-        code="http://localhost:5000/swagger"
-        language="text"
-        title="API 文档地址"
+        code={`dotnet add TaskHub.Api/TaskHub.Api.csproj package Swashbuckle.AspNetCore`}
+        language="bash"
+        title="安装 Swashbuckle"
       />
+      <p>
+        在 <code>Program.cs</code> 的顶部添加服务注册：
+      </p>
+      <LessonCode
+        code={`builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();`}
+        language="csharp"
+        title="Program.cs 服务注册部分"
+      />
+      <p>
+        在 <code>Program.cs</code> 的开发环境判断中添加中间件：
+      </p>
+      <LessonCode
+        code={`if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();     // 已有的，生成 OpenAPI JSON
+    app.UseSwagger();     // 新增：生成 Swagger JSON
+    app.UseSwaggerUI();   // 新增：渲染 Swagger UI 页面
+}`}
+        language="csharp"
+        title="Program.cs 中间件部分"
+      />
+      <p>
+        运行后访问 <code>http://localhost:5000/swagger</code> 即可看到经典的 Swagger UI。
+      </p>
+
+      <h4>方案二：Scalar（新版推荐，UI 更现代，地址 /scalar/v1）</h4>
+      <p>安装包：</p>
+      <LessonCode
+        code={`dotnet add TaskHub.Api/TaskHub.Api.csproj package Scalar.AspNetCore`}
+        language="bash"
+        title="安装 Scalar"
+      />
+      <p>
+        在 <code>Program.cs</code> 的开发环境判断中添加：
+      </p>
+      <LessonCode
+        code={`if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();            // 已有的，生成 OpenAPI JSON
+    app.MapScalarApiReference(); // 新增：渲染 Scalar UI
+}`}
+        language="csharp"
+        title="Program.cs 中间件部分"
+      />
+      <p>
+        运行后访问 <code>http://localhost:5000/scalar/v1</code> 即可看到现代风格的 API 文档界面。
+      </p>
 
       <LessonQuote>
         如果端口不同，以终端输出为准。不要把端口写死成 5000。
       </LessonQuote>
+
+      <LessonCheckpoint
+        completedChecklistIds={completedChecklistIds}
+        description={
+          <p>
+            已安装 Swashbuckle 或 Scalar，配置好 <code>Program.cs</code>，并成功访问 API 文档 UI。
+          </p>
+        }
+        id="setup-first-api-ui"
+        title="配置 API 文档 UI"
+        onToggleChecklistItem={onToggleChecklistItem}
+      />
 
       <h3>NuGet 包</h3>
       <p>
@@ -114,11 +180,13 @@ export const SetupFirstApiLesson = ({
         </p>
       </TeacherTask>
 
-      <h3>常见问题：Swagger 打不开</h3>
-      <p>
-        先检查终端输出的 URL，再确认是否是 Development 环境。很多模板只在开发环境启用
-        Swagger。
-      </p>
+      <h3>常见问题：API 文档打不开</h3>
+      <ul>
+        <li>先检查终端输出的 URL 和端口号，确认是否正确。</li>
+        <li>只有 Development 环境启用了文档 UI。检查 <code>ASPNETCORE_ENVIRONMENT</code> 是否为 <code>Development</code>。</li>
+        <li>Swashbuckle 路径是 <code>/swagger</code>，Scalar 路径是 <code>/scalar/v1</code>，走对了吗？</li>
+        <li>确认对应 NuGet 包已安装，且 <code>Program.cs</code> 配置无误。</li>
+      </ul>
 
       <h3>阶段验收问题</h3>
       <ul>
