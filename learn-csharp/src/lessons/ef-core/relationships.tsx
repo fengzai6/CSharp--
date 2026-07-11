@@ -3,7 +3,6 @@ import {
   LessonCode,
   LessonQuote,
   LessonShell,
-  LessonStep,
   LessonTable,
   TeacherTask,
 } from "@/components/lesson-ui";
@@ -19,18 +18,25 @@ export const EfRelationshipsLesson = ({
     <LessonShell>
       <h3>本章你要掌握什么</h3>
       <p>
-        学完本节后，你应该能用 EF Core 建模 TaskHub 的项目成员、任务指派和评论关系，并知道什么时候用 <code>Include</code> 加载实体图、什么时候用 <code>Select</code> 投影 DTO、什么时候加 <code>AsNoTracking()</code>。
+        学完本节后，你应该能用 EF Core 建模 TaskHub
+        的项目成员、任务指派和评论关系，并知道什么时候用 <code>Include</code>{" "}
+        加载实体图、什么时候用 <code>Select</code> 投影 DTO、什么时候加{" "}
+        <code>AsNoTracking()</code>。
       </p>
 
       <TeacherTask title="TaskHub 当前状态">
         <p>
-          上一节已经创建了 <code>TaskHubDbContext</code> 和核心实体。本节继续补齐关系：<code>Project</code> 通过 <code>ProjectMember</code> 管理成员，<code>WorkItem</code> 可以指派给用户并包含评论。
+          上一节已经创建了 <code>TaskHubDbContext</code>{" "}
+          和核心实体。本节继续补齐关系：<code>Project</code> 通过{" "}
+          <code>ProjectMember</code> 管理成员，<code>WorkItem</code>{" "}
+          可以指派给用户并包含评论。
         </p>
       </TeacherTask>
 
       <h3>一对多：Project 与 WorkItem</h3>
       <p>
-        一个项目有多条任务，任务必须属于一个项目。这是 TaskHub 最核心的一对多关系。
+        一个项目有多条任务，任务必须属于一个项目。这是 TaskHub
+        最核心的一对多关系。
       </p>
 
       <LessonCode
@@ -71,11 +77,17 @@ public class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
 
       <h3>多对多：ProjectMember 连接实体</h3>
       <p>
-        项目和用户是多对多关系，但成员关系有 <code>Role</code>、<code>JoinedAt</code>、<code>IsActive</code> 等业务字段，所以要显式建连接实体，而不是使用 skip navigation。
+        项目和用户是多对多关系，但成员关系有 <code>Role</code>、
+        <code>JoinedAt</code>、<code>IsActive</code>{" "}
+        等业务字段，所以要显式建连接实体，而不是使用 skip navigation。
       </p>
 
       <LessonQuote>
-        这里为了复用审计字段让 <code>ProjectMember</code> 继承了 <code>BaseEntity</code>，但 EF 配置里真正用于唯一标识成员关系的是 <code>ProjectId + UserId</code>。如果你不想让学习者混淆，也可以在真实项目里把成员关系单独建成不继承 <code>BaseEntity</code> 的组合主键实体。
+        这里为了复用审计字段让 <code>ProjectMember</code> 继承了{" "}
+        <code>BaseEntity</code>，但 EF 配置里真正用于唯一标识成员关系的是{" "}
+        <code>ProjectId + UserId</code>
+        。如果你不想让学习者混淆，也可以在真实项目里把成员关系单独建成不继承{" "}
+        <code>BaseEntity</code> 的组合主键实体。
       </LessonQuote>
 
       <LessonCode
@@ -115,12 +127,15 @@ public class ProjectMemberConfiguration : IEntityTypeConfiguration<ProjectMember
       />
 
       <LessonQuote>
-        关键差异：EF Core 支持不带额外字段的多对多 skip navigation。但项目成员关系通常需要角色、加入时间、是否停用等字段，所以 TaskHub 主线使用显式连接实体。
+        关键差异：EF Core 支持不带额外字段的多对多 skip
+        navigation。但项目成员关系通常需要角色、加入时间、是否停用等字段，所以
+        TaskHub 主线使用显式连接实体。
       </LessonQuote>
 
       <h3>任务指派与评论</h3>
       <p>
-        任务可以没有指派人，所以 <code>AssigneeId</code> 是可空外键；评论必须属于一条任务和一个作者。
+        任务可以没有指派人，所以 <code>AssigneeId</code>{" "}
+        是可空外键；评论必须属于一条任务和一个作者。
       </p>
 
       <LessonCode
@@ -165,7 +180,9 @@ public class WorkItemCommentConfiguration : IEntityTypeConfiguration<WorkItemCom
 
       <h3>查询：Include 与投影</h3>
       <p>
-        访问关系数据有两种常见方式：加载实体图（<code>Include / ThenInclude</code>）和投影 DTO（<code>Select</code>）。要修改实体时用 tracking 查询；只返回接口数据时优先投影。
+        访问关系数据有两种常见方式：加载实体图（
+        <code>Include / ThenInclude</code>）和投影 DTO（<code>Select</code>
+        ）。要修改实体时用 tracking 查询；只返回接口数据时优先投影。
       </p>
 
       <LessonCode
@@ -194,16 +211,29 @@ var items = await _context.WorkItems
       <LessonTable
         headers={["场景", "策略", "原因"]}
         rows={[
-          ["任务列表 / 只读接口", "AsNoTracking() + Select 投影", "只取需要字段，不承担追踪开销"],
-          ["加载后要修改任务", "tracking 查询 + 必要 Include", "需要 Change Tracker 算出变更"],
+          [
+            "任务列表 / 只读接口",
+            "AsNoTracking() + Select 投影",
+            "只取需要字段，不承担追踪开销",
+          ],
+          [
+            "加载后要修改任务",
+            "tracking 查询 + 必要 Include",
+            "需要 Change Tracker 算出变更",
+          ],
           ["判断成员是否存在", "AnyAsync()", "翻译成 EXISTS，不加载实体"],
-          ["按一批任务 id 查询", "Where(item => ids.Contains(item.Id))", "翻译成 IN"],
+          [
+            "按一批任务 id 查询",
+            "Where(item => ids.Contains(item.Id))",
+            "翻译成 IN",
+          ],
         ]}
       />
 
       <h3>分页查询示例</h3>
       <p>
-        任务列表接口的典型写法：搜索条件、<code>CountAsync</code> 取总数、<code>Skip / Take</code> 分页、<code>Select</code> 投影成 DTO。
+        任务列表接口的典型写法：搜索条件、<code>CountAsync</code> 取总数、
+        <code>Skip / Take</code> 分页、<code>Select</code> 投影成 DTO。
       </p>
 
       <LessonCode
@@ -247,7 +277,8 @@ var items = await _context.WorkItems
 
       <h3>RefreshToken 实体</h3>
       <p>
-        认证章节需要 Refresh Token 持久化。这里先补实体和配置，Auth 章节直接复用 <code>TaskHubDbContext</code> 即可。
+        认证章节需要 Refresh Token 持久化。这里先补实体和配置，Auth 章节直接复用{" "}
+        <code>TaskHubDbContext</code> 即可。
       </p>
 
       <LessonCode
@@ -281,12 +312,14 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
       />
 
       <LessonQuote>
-        只存 <code>TokenHash</code> 哈希值，不存明文。轮换时通过 <code>RevokedAt</code> 标记撤销，不物理删除。
+        只存 <code>TokenHash</code> 哈希值，不存明文。轮换时通过{" "}
+        <code>RevokedAt</code> 标记撤销，不物理删除。
       </LessonQuote>
 
       <h3>避免 N+1 查询</h3>
       <p>
-        关系数据没有预加载时，遍历集合可能触发逐条查询（N+1）。列表接口优先用投影；详情页确实要实体图时再用 <code>Include</code>。
+        关系数据没有预加载时，遍历集合可能触发逐条查询（N+1）。列表接口优先用投影；详情页确实要实体图时再用{" "}
+        <code>Include</code>。
       </p>
 
       <LessonCode
@@ -302,16 +335,26 @@ var item = await _context.WorkItems
 
       <h3>常见误区</h3>
       <ul>
-        <li>查询列表接口时直接 <code>Include</code> 一整棵对象图，把不需要的数据全拉回来。</li>
-        <li>只读查询忘记 <code>AsNoTracking()</code>。</li>
-        <li>项目成员这种带业务字段的多对多关系使用 skip navigation，后续无法记录角色和加入时间。</li>
+        <li>
+          查询列表接口时直接 <code>Include</code>{" "}
+          一整棵对象图，把不需要的数据全拉回来。
+        </li>
+        <li>
+          只读查询忘记 <code>AsNoTracking()</code>。
+        </li>
+        <li>
+          项目成员这种带业务字段的多对多关系使用 skip
+          navigation，后续无法记录角色和加入时间。
+        </li>
       </ul>
 
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={
           <p>
-            已能建模 <code>ProjectMember</code>、任务指派和评论关系，并能按场景选择 <code>Include</code> 或 DTO 投影查询。
+            已能建模 <code>ProjectMember</code>
+            、任务指派和评论关系，并能按场景选择 <code>Include</code> 或 DTO
+            投影查询。
           </p>
         }
         id="ef-relationships-main"
@@ -321,14 +364,20 @@ var item = await _context.WorkItems
 
       <h3>阶段验收问题</h3>
       <ul>
-        <li>查询 DTO 时为什么优先用 <code>Select</code> 投影？</li>
-        <li><code>Include</code> 适合什么场景，不适合什么场景？</li>
+        <li>
+          查询 DTO 时为什么优先用 <code>Select</code> 投影？
+        </li>
+        <li>
+          <code>Include</code> 适合什么场景，不适合什么场景？
+        </li>
         <li>为什么项目成员关系推荐显式中间实体而不是 skip navigation？</li>
       </ul>
 
       <h3>写入 TaskHub.Infrastructure — 关系配置</h3>
       <p>
-        上面的 <code>IEntityTypeConfiguration&lt;T&gt;</code> 配置类要落盘到 <code>TaskHub.Infrastructure</code>，<code>ApplyConfigurationsFromAssembly</code> 才能自动发现并加载它们。
+        上面的 <code>IEntityTypeConfiguration&lt;T&gt;</code> 配置类要落盘到{" "}
+        <code>TaskHub.Infrastructure</code>，
+        <code>ApplyConfigurationsFromAssembly</code> 才能自动发现并加载它们。
       </p>
 
       <LessonCode
@@ -339,8 +388,12 @@ mkdir -p TaskHub.Infrastructure/Data/Configurations`}
       />
 
       <p>
-        每个配置文件放在 <code>Data/Configurations/</code> 下，命名空间为 <code>TaskHub.Infrastructure.Data.Configurations</code>。
-        注意 <code>ProjectMemberConfiguration</code> 用 <code>HasKey</code> 指定了 <code>ProjectId + UserId</code> 联合主键，这会覆盖 <code>BaseEntity</code> 继承来的 <code>Id</code> 作为主键。<code>Id</code> 字段仍然存在（用于审计），但数据库主键是联合主键。
+        每个配置文件放在 <code>Data/Configurations/</code> 下，命名空间为{" "}
+        <code>TaskHub.Infrastructure.Data.Configurations</code>。 注意{" "}
+        <code>ProjectMemberConfiguration</code> 用 <code>HasKey</code> 指定了{" "}
+        <code>ProjectId + UserId</code> 联合主键，这会覆盖{" "}
+        <code>BaseEntity</code> 继承来的 <code>Id</code> 作为主键。
+        <code>Id</code> 字段仍然存在（用于审计），但数据库主键是联合主键。
       </p>
 
       <h4>Data/Configurations/WorkItemConfiguration.cs</h4>
@@ -451,14 +504,22 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
 
       <p>
         写完运行 <code>dotnet build TaskHub.Api</code> 确认编译通过。
-        如果编译失败，先检查：每个文件的 <code>namespace</code> 是否为 <code>TaskHub.Infrastructure.Data.Configurations</code>、是否写了 <code>using Microsoft.EntityFrameworkCore.Metadata.Builders;</code>（<code>EntityTypeBuilder</code> 来自这里）。
+        如果编译失败，先检查：每个文件的 <code>namespace</code> 是否为{" "}
+        <code>TaskHub.Infrastructure.Data.Configurations</code>、是否写了{" "}
+        <code>using Microsoft.EntityFrameworkCore.Metadata.Builders;</code>（
+        <code>EntityTypeBuilder</code> 来自这里）。
       </p>
 
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={
           <p>
-            已创建 <code>Data/Configurations/</code> 目录，写入 <code>WorkItemConfiguration</code>、<code>ProjectMemberConfiguration</code>、<code>WorkItemCommentConfiguration</code>、<code>RefreshTokenConfiguration</code> 四个配置类，<code>dotnet build TaskHub.Api</code> 编译通过。
+            已创建 <code>Data/Configurations/</code> 目录，写入{" "}
+            <code>WorkItemConfiguration</code>、
+            <code>ProjectMemberConfiguration</code>、
+            <code>WorkItemCommentConfiguration</code>、
+            <code>RefreshTokenConfiguration</code> 四个配置类，
+            <code>dotnet build TaskHub.Api</code> 编译通过。
           </p>
         }
         id="ef-relationships-write-configs"
