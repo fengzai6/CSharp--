@@ -268,8 +268,17 @@ dotnet add TaskHub.IntegrationTests/TaskHub.IntegrationTests.csproj package Test
         <code>IAsyncLifetime</code> 管理容器生命周期，并把真实连接字符串注入到{" "}
         <code>WebApplicationFactory</code>。
       </p>
+      <p>
+        用下面这个类<strong>完整替换</strong>上一节的 <code>WorkItemsControllerIntegrationTests</code>
+        （不要两个类并存，否则会 CS0101 重复定义）。
+      </p>
       <LessonCode
-        code={`using Testcontainers.PostgreSql;
+        code={`using System.Net;
+using System.Text;
+using System.Text.Json;
+using FluentAssertions;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Testcontainers.PostgreSql;
 
 public class WorkItemsControllerIntegrationTests : IAsyncLifetime
 {

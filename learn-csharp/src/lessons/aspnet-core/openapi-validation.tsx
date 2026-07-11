@@ -118,10 +118,11 @@ public class CreateWorkItemRequestValidator : AbstractValidator<CreateWorkItemRe
         code={`// 1. 文件顶部添加 using：
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using TaskHub.Api.Validators;
 
 // 2. builder.Services 部分添加：
 builder.Services.AddFluentValidationAutoValidation();
-builder.Services.AddValidatorsFromAssemblyContaining<Program>();`}
+builder.Services.AddValidatorsFromAssemblyContaining<CreateWorkItemRequestValidator>();`}
         language="csharp"
         title="注册验证器"
       />
@@ -132,13 +133,37 @@ builder.Services.AddValidatorsFromAssemblyContaining<Program>();`}
 
       <h4>落盘</h4>
       <p>
-        把上面的验证器写入文件，<code>AddValidatorsFromAssemblyContaining&lt;Program&gt;</code> 会自动扫描并注册：
+        先用 class 版 <code>CreateWorkItemRequest</code> 覆盖上一节的 record（验证器依赖 <code>Description</code> / <code>DueDate</code>），再写入验证器；<code>AddValidatorsFromAssemblyContaining&lt;CreateWorkItemRequestValidator&gt;</code> 会自动扫描并注册：
       </p>
 
       <LessonCode
         code={`mkdir -p TaskHub.Api/Validators`}
         language="bash"
         title="创建 Validators 目录"
+      />
+
+      <LessonCode
+        code={`using System.ComponentModel.DataAnnotations;
+
+namespace TaskHub.Api.Models.Requests;
+
+public class CreateWorkItemRequest
+{
+    [Required(ErrorMessage = "项目 ID 不能为空")]
+    public string ProjectId { get; set; } = string.Empty;
+
+    [Required]
+    [StringLength(120, MinimumLength = 2)]
+    public string Title { get; set; } = string.Empty;
+
+    [StringLength(2000)]
+    public string? Description { get; set; }
+
+    public string? AssigneeId { get; set; }
+    public DateTime? DueDate { get; set; }
+}`}
+        language="csharp"
+        title="Models/Requests/CreateWorkItemRequest.cs（覆盖旧 record）"
       />
 
       <LessonCode
@@ -174,8 +199,22 @@ public class CreateWorkItemRequestValidator : AbstractValidator<CreateWorkItemRe
         title="Validators/CreateWorkItemRequestValidator.cs"
       />
 
+      <h4>更新 Program.cs</h4>
+      <LessonCode
+        code={`// 1. 文件顶部添加 using：
+using FluentValidation;
+using FluentValidation.AspNetCore;
+using TaskHub.Api.Validators;
+
+// 2. builder.Services 部分添加：
+builder.Services.AddFluentValidationAutoValidation();
+builder.Services.AddValidatorsFromAssemblyContaining<CreateWorkItemRequestValidator>();`}
+        language="csharp"
+        title="Program.cs 注册 FluentValidation"
+      />
+
       <p>
-        写完运行 <code>dotnet build TaskHub.Api</code> 确认编译通过。
+        写完运行 <code>dotnet build TaskHub.Api</code> 确认编译通过。如果报 <code>Description</code> / <code>DueDate</code> 找不到，先确认已用 class 版覆盖旧 record；如果自动校验不生效，先确认 <code>Program.cs</code> 已注册 FluentValidation。
       </p>
 
       <h4>class-validator 与 FluentValidation 对比</h4>
@@ -302,7 +341,7 @@ if (app.Environment.IsDevelopment())
       </p>
 
       <LessonCode
-        code={`dotnet add TaskHub.Api/TaskHub.Api.csproj package Swashbuckle.AspNetCore`}
+        code={`dotnet add TaskHub.Api/TaskHub.Api.csproj package Swashbuckle.AspNetCore --version 7.1.0`}
         language="bash"
         title="安装 Swashbuckle"
       />
@@ -440,7 +479,7 @@ public static WorkItemSummaryDto ToDto(this WorkItem item) => new(
         completedChecklistIds={completedChecklistIds}
         description={
           <p>
-            已能为 DTO 配置 FluentValidation，区分 OpenAPI 与 Swagger UI，并为项目选择一种稳定目录结构。
+            已用 class 版 <code>CreateWorkItemRequest</code> 替换旧 record，写入 <code>CreateWorkItemRequestValidator</code> 并注册 FluentValidation，能区分 OpenAPI 与 Swagger UI，并为项目选择一种稳定目录结构，<code>dotnet build TaskHub.Api</code> 编译通过。
           </p>
         }
         id="aspnet-openapi-validation-main"

@@ -145,9 +145,14 @@ public class PasswordService
         title="安装 JwtBearer"
       />
 
-      <p>配置：</p>
+      <p>
+        配置：在已有 <code>appsettings.json</code> 上<strong>追加</strong> <code>Jwt</code> 节点，不要整文件覆盖掉 EF 章的 <code>ConnectionStrings</code>：
+      </p>
       <LessonCode
         code={`{
+  "ConnectionStrings": {
+    "Default": "Host=localhost;Database=taskhub;Username=postgres;Password=postgres"
+  },
   "Jwt": {
     "Issuer": "taskhub",
     "Audience": "taskhub-client",
@@ -157,7 +162,7 @@ public class PasswordService
   }
 }`}
         language="json"
-        title="appsettings.json"
+        title="appsettings.json — 保留 ConnectionStrings 并追加 Jwt"
       />
 
       <LessonQuote>
@@ -534,30 +539,79 @@ public class AuthController : ControllerBase
         title="Controllers/AuthController.cs"
       />
 
+      <h4>更新 appsettings.json</h4>
+      <p>
+        在已有 <code>TaskHub.Api/appsettings.json</code> 上<strong>追加</strong> <code>Jwt</code> 节点，不要整文件覆盖掉 EF 章的 <code>ConnectionStrings</code>。本地可用 user-secrets 覆盖 <code>Secret</code>：
+      </p>
+      <LessonCode
+        code={`{
+  "ConnectionStrings": {
+    "Default": "Host=localhost;Database=taskhub;Username=postgres;Password=postgres"
+  },
+  "Jwt": {
+    "Issuer": "taskhub",
+    "Audience": "taskhub-client",
+    "Secret": "replace-with-a-long-random-secret",
+    "AccessTokenMinutes": 15,
+    "RefreshTokenDays": 7
+  }
+}`}
+        language="json"
+        title="appsettings.json — 保留 ConnectionStrings 并追加 Jwt"
+      />
+
       <h4>更新 Program.cs</h4>
       <LessonCode
         code={`// 1. 文件顶部添加 using：
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 using TaskHub.Api.Services;
 
 // 2. builder.Services 部分添加：
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
 builder.Services.AddScoped<PasswordService>();
 builder.Services.AddScoped<TokenService>();
-builder.Services.AddScoped<AuthService>();`}
+builder.Services.AddScoped<AuthService>();
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        var jwt = builder.Configuration.GetSection("Jwt");
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwt["Issuer"],
+            ValidAudience = jwt["Audience"],
+            ClockSkew = TimeSpan.FromMinutes(1),
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(jwt["Secret"]!))
+        };
+    });
+
+builder.Services.AddAuthorization();
+
+// 3. var app = builder.Build(); 之后，MapControllers 前添加：
+app.UseAuthentication();
+app.UseAuthorization();`}
         language="csharp"
         title="Program.cs 注册认证服务"
       />
 
       <p>
         写完运行 <code>dotnet build TaskHub.Api</code> 确认编译通过。
-        如果编译失败，先检查：<code>TokenService.cs</code> 是否写了所有 using（特别是 <code>System.IdentityModel.Tokens.Jwt</code> 和 <code>Microsoft.IdentityModel.Tokens</code>）、<code>Program.cs</code> 是否注册了 <code>TokenService</code>、<code>PasswordService</code> 和 <code>AuthService</code>。
+        如果编译失败，先检查：<code>TokenService.cs</code> 是否写了所有 using（特别是 <code>System.IdentityModel.Tokens.Jwt</code> 和 <code>Microsoft.IdentityModel.Tokens</code>）、<code>Program.cs</code> 是否注册了 <code>TokenService</code>、<code>PasswordService</code>、<code>AuthService</code> 以及 JWT Bearer。
       </p>
 
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={
           <p>
-            已创建认证相关的 DTO（<code>RegisterRequest</code>、<code>LoginRequest</code>、<code>LoginResponse</code>）、配置类（<code>JwtSettings</code>）、服务（<code>TokenService</code>、<code>PasswordService</code>、<code>AuthService</code>）、<code>AuthController</code>（注册 <code>/api/auth/register</code> 和 <code>/api/auth/login</code>），注册到 <code>Program.cs</code>，<code>dotnet build TaskHub.Api</code> 编译通过。
+            已创建认证相关的 DTO（<code>RegisterRequest</code>、<code>LoginRequest</code>、<code>LoginResponse</code>）、配置类（<code>JwtSettings</code>）、服务（<code>TokenService</code>、<code>PasswordService</code>、<code>AuthService</code>）、<code>AuthController</code>（注册 <code>/api/auth/register</code> 和 <code>/api/auth/login</code>），并在 <code>appsettings.json</code> 写入 <code>Jwt</code> 配置段（本地 Secret 可用 user-secrets 覆盖），在 <code>Program.cs</code> 注册 JWT Bearer、启用 <code>UseAuthentication</code> / <code>UseAuthorization</code>，<code>dotnet build TaskHub.Api</code> 编译通过。
           </p>
         }
         id="auth-password-jwt-write-files"

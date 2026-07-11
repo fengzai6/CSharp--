@@ -198,13 +198,16 @@ public class ProjectNotificationHub : Hub
 Task<WorkItem> MoveAsync(string id, WorkItemStatus status);
 
 // WorkItemService.cs 追加实现（内存版）：
-public Task<WorkItem> MoveAsync(string id, WorkItemStatus status)
+public async Task<WorkItem> MoveAsync(string id, WorkItemStatus status)
 {
     var item = _items.FirstOrDefault(i => i.Id == id)
         ?? throw new KeyNotFoundException("任务不存在");
     item.MoveTo(status);
-    return Task.FromResult(item);
+    return item;
 }
+
+// WorkItemsController.cs 顶部 using 追加：
+using TaskHub.Core.Models;
 
 // WorkItemsController.cs 追加端点：
 [HttpPost("{id}/move")]
@@ -216,6 +219,26 @@ public async Task<IActionResult> Move(string id, [FromBody] WorkItemStatus statu
         language="csharp"
         title="补 MoveAsync 状态变更"
       />
+
+      <p>
+        验收时先创建任务，再调 Move。body 直接绑裸枚举，默认只接受数字（<code>1 = InProgress</code>），不要包成对象：
+      </p>
+      <LessonCode
+        code={`POST /api/work-items
+Content-Type: application/json
+
+{"projectId":"project-1","title":"SignalR 推送验证"}
+
+POST /api/work-items/{id}/move
+Content-Type: application/json
+
+1`}
+        language="http"
+        title="Postman：创建任务后变更状态"
+      />
+      <LessonQuote>
+        body 写裸值 <code>1</code>，不要写成 <code>{`{"status":1}`}</code> 或 <code>"InProgress"</code>。若要传字符串枚举名，需先配置 <code>JsonStringEnumConverter</code>；本课默认用数字。
+      </LessonQuote>
 
       <h3>从业务服务推送通知</h3>
       <p>
@@ -231,9 +254,7 @@ using TaskHub.Api.Hubs;
 
 private readonly IHubContext<ProjectNotificationHub> _hubContext;
 
-public WorkItemService(
-    /* 已有依赖 */,
-    IHubContext<ProjectNotificationHub> hubContext)
+public WorkItemService(IHubContext<ProjectNotificationHub> hubContext)
 {
     _hubContext = hubContext;
 }
@@ -245,7 +266,7 @@ await _hubContext.Clients
     .Group(ProjectNotificationHub.GetProjectGroup(item.ProjectId))
     .SendAsync("WorkItemUpdated", dto);
 
-return dto;`}
+return item;`}
         language="csharp"
         title="在已有 WorkItemService 中追加 SignalR 推送"
       />
@@ -366,6 +387,7 @@ using TaskHub.Api.Hubs;
 builder.Services.AddSignalR();
 
 // var app = builder.Build(); 之后，MapControllers 附近：
+app.UseStaticFiles(); // 托管 wwwroot/test-signalr.html
 app.MapHub<ProjectNotificationHub>("/hubs/projects");`}
         language="csharp"
         title="Program.cs 注册 SignalR Hub"
@@ -420,8 +442,38 @@ app.MapHub<ProjectNotificationHub>("/hubs/projects");`,
             checkpoints: ["使用项目 Group", "发送 DTO 而不是 EF 实体", "业务数据已先保存到数据库"],
           },
           {
+            title: "准备 project-1 成员数据",
+            content: (
+              <p>
+                <code>JoinProject</code> 会查 <code>ProjectMembers</code>。主线目前没有创建项目/成员 API，验证前先准备数据：
+                1）调用注册/登录拿到 <code>accessToken</code>，并记下 JWT 的 <code>sub</code>/<code>NameIdentifier</code> 作为 <code>userId</code>；
+                2）在数据库写入 <code>Projects.Id = "project-1"</code>，以及当前用户对应的 <code>ProjectMembers</code>（<code>IsActive = true</code>）；
+                3）浏览器执行 <code>localStorage.setItem("accessToken", "...")</code> 后再打开测试页。
+              </p>
+            ),
+            code: `-- 字段名以你本地迁移表为准；userId 换成登录用户的 Id
+INSERT INTO "Projects" ("Id", "Name", "CreatedAt")
+VALUES ('project-1', 'SignalR Demo', NOW())
+ON CONFLICT DO NOTHING;
+
+INSERT INTO "ProjectMembers" ("Id", "ProjectId", "UserId", "Role", "JoinedAt", "IsActive", "CreatedAt")
+VALUES (gen_random_uuid()::text, 'project-1', '<userId>', 0, NOW(), true, NOW())
+ON CONFLICT DO NOTHING;`,
+            codeLanguage: "sql",
+            codeTitle: "准备 Project + ProjectMember",
+            checkpoints: [
+              "已登录并拿到 accessToken 与 userId",
+              "Projects 中存在 project-1",
+              "ProjectMembers 中存在当前用户且 IsActive=true",
+            ],
+          },
+          {
             title: "在浏览器验证实时推送",
-            content: <p>用一个最小 HTML 页面连接 <code>ProjectNotificationHub</code>，加入项目组，看到 <code>WorkItemUpdated</code> 实时到达。</p>,
+            content: (
+              <p>
+                把页面放到 <code>TaskHub.Api/wwwroot/test-signalr.html</code>。确认 <code>Program.cs</code> 已有 <code>app.UseStaticFiles()</code> 后启动 API，用浏览器打开 <code>https://localhost:&lt;端口&gt;/test-signalr.html</code>（不要用 <code>file://</code>，否则相对路径 <code>/hubs/projects</code> 会失效）。加入项目组后，再调 Move 看 <code>WorkItemUpdated</code>。若提示“你不是该项目成员”，先回到上一步补成员数据。
+              </p>
+            ),
             code: `<!-- wwwroot/test-signalr.html -->
 <!DOCTYPE html>
 <html>
@@ -454,8 +506,9 @@ app.MapHub<ProjectNotificationHub>("/hubs/projects");`,
             codeLanguage: "html",
             codeTitle: "test-signalr.html",
             checkpoints: [
-              "打开浏览器，点击 Join Project",
-              "用 Postman 调用一次任务状态变更 API",
+              "Program.cs 已启用 UseStaticFiles，并通过 https://localhost:<端口>/test-signalr.html 打开页面（非 file://）",
+              "点击 Join Project 成功加入 project-1",
+              "POST /api/work-items 创建任务，再 POST /api/work-items/{id}/move，body 写裸数字 1",
               "页面实时显示 WorkItemUpdated 推送数据",
               "断网再恢复后能自动重连",
             ],

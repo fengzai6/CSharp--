@@ -60,7 +60,7 @@ export const SetupFirstApiLesson = ({
       <h4>方案一：Swashbuckle（经典 Swagger UI，地址 /swagger）</h4>
       <p>安装包：</p>
       <LessonCode
-        code={`dotnet add TaskHub.Api/TaskHub.Api.csproj package Swashbuckle.AspNetCore`}
+        code={`dotnet add TaskHub.Api/TaskHub.Api.csproj package Swashbuckle.AspNetCore --version 7.1.0`}
         language="bash"
         title="安装 Swashbuckle"
       />

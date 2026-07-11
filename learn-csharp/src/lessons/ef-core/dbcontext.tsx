@@ -392,7 +392,10 @@ mkdir -p TaskHub.Infrastructure/Models`}
       </p>
 
       <p>
-        注意：<code>TaskHub.Core</code> 中的 <code>WorkItem</code> 是学习 C# 类型时的简化版本，这里在 Infrastructure 中重新定义了带导航属性的 EF 实体版本，后续以 Infrastructure 版本为准。
+        注意：这里存在两个不同命名空间的 <code>WorkItem</code>，请并存使用，不要互相替换。
+        <code>TaskHub.Core.Models.WorkItem</code> 继续供 Api 内存服务、单测和 SignalR <code>MoveAsync</code>（含 <code>MoveTo</code>）使用；
+        <code>TaskHub.Infrastructure.Models.WorkItem</code> 只给 EF / <code>DbContext</code> 使用。
+        当前主线不要删除 Core 版，也不要把 <code>WorkItemService</code> 直接改成 Infrastructure 实体。
       </p>
 
       <h4>Models/BaseEntity.cs</h4>

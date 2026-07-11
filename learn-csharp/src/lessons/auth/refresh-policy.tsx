@@ -226,6 +226,12 @@ builder.Services
         上面的代码片段需要落盘到已有的文件中。本节会修改上一节已创建的 <code>TokenService</code>、<code>AuthService</code>、<code>AuthController</code>，并新增资源级授权 Handler。
       </p>
 
+      <LessonCode
+        code={`mkdir -p TaskHub.Api/Authorization`}
+        language="bash"
+        title="创建 Authorization 目录"
+      />
+
       <h4>Models/Requests/RefreshRequest.cs</h4>
       <LessonCode
         code={`namespace TaskHub.Api.Models.Requests;
@@ -364,24 +370,43 @@ public class ProjectOwnerHandler : AuthorizationHandler<ProjectOwnerRequirement,
       <h4>更新 Program.cs</h4>
       <LessonCode
         code={`// 顶部 using 补充：
+using Microsoft.AspNetCore.Authorization;
 using TaskHub.Api.Authorization;
 
 // builder.Services 部分补充：
-builder.Services.AddScoped<IAuthorizationHandler, ProjectOwnerHandler>();`}
+builder.Services.AddScoped<IAuthorizationHandler, ProjectOwnerHandler>();
+
+// 在上一节已有的 AddJwtBearer(options => { ... }) 内追加 Events（不要另起一段）：
+options.Events = new JwtBearerEvents
+{
+    OnMessageReceived = context =>
+    {
+        var accessToken = context.Request.Query["access_token"];
+        var path = context.HttpContext.Request.Path;
+
+        if (!string.IsNullOrEmpty(accessToken)
+            && path.StartsWithSegments("/hubs/projects"))
+        {
+            context.Token = accessToken;
+        }
+
+        return Task.CompletedTask;
+    }
+};`}
         language="csharp"
-        title="Program.cs — 注册资源级授权 Handler"
+        title="Program.cs — 注册资源级授权 Handler + SignalR token"
       />
 
       <p>
         写完运行 <code>dotnet build TaskHub.Api</code> 确认编译通过。
-        如果编译失败，先检查：<code>TokenService.cs</code> 是否补了 <code>using System.Security.Cryptography;</code>、<code>ProjectOwnerHandler.cs</code> 是否写了所有 using、<code>Program.cs</code> 是否注册了 <code>ProjectOwnerHandler</code>。
+        如果编译失败，先检查：<code>TokenService.cs</code> 是否补了 <code>using System.Security.Cryptography;</code>、<code>ProjectOwnerHandler.cs</code> 是否写了所有 using、<code>Program.cs</code> 是否补了 <code>using Microsoft.AspNetCore.Authorization;</code> 并注册了 <code>ProjectOwnerHandler</code>，以及 <code>OnMessageReceived</code> 是否写在已有的 <code>AddJwtBearer</code> 配置内。
       </p>
 
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={
           <p>
-            已在 <code>TokenService</code> 补充 <code>CreateRefreshTokenAsync</code>、在 <code>AuthService</code> 补充 <code>RefreshAsync</code> 并修改 <code>LoginAsync</code> 真正签发 refresh token、在 <code>AuthController</code> 补充 <code>/api/auth/refresh</code> 端点、创建 <code>ProjectOwnerHandler</code> 并注册到 <code>Program.cs</code>，<code>dotnet build TaskHub.Api</code> 编译通过。
+            已在 <code>TokenService</code> 补充 <code>CreateRefreshTokenAsync</code>、在 <code>AuthService</code> 补充 <code>RefreshAsync</code> 并修改 <code>LoginAsync</code> 真正签发 refresh token、在 <code>AuthController</code> 补充 <code>/api/auth/refresh</code> 端点、创建 <code>ProjectOwnerHandler</code> 并注册到 <code>Program.cs</code>，且 JWT Bearer 已配置 <code>OnMessageReceived</code> 读取 <code>/hubs/projects</code> 的 <code>access_token</code>，<code>dotnet build TaskHub.Api</code> 编译通过。
           </p>
         }
         id="auth-refresh-policy-write-files"

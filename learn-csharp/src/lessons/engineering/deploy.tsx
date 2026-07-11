@@ -92,7 +92,10 @@ app.MapControllers().RequireRateLimiting("default");`}
         在端点上用 <code>[EnableRateLimiting]</code> 指定要应用的策略：
       </p>
       <LessonCode
-        code={`[HttpPost("login")]
+        code={`// Controllers/AuthController.cs 顶部 using 追加：
+using Microsoft.AspNetCore.RateLimiting;
+
+[HttpPost("login")]
 [EnableRateLimiting("login")]  // 使用指定策略
 public async Task<IActionResult> Login(LoginRequest dto) { ... }`}
         language="csharp"
@@ -270,9 +273,13 @@ dotnet publish TaskHub.Api/TaskHub.Api.csproj -c Release -r linux-x64 --self-con
 
         <h4>代码示例</h4>
         <LessonCode
-          code={`// Program.cs
-var builder = WebApplication.CreateBuilder(args);
+          code={`// 在已有 Program.cs 上追加，不要整文件覆盖。
 
+// 顶部 using 追加：
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
+
+// builder.Services 部分追加：
 builder.Services.AddRateLimiter(rateLimiterOptions =>
 {
     // 默认策略：每 IP 每秒 10 请求。命名策略需要绑定到端点才会生效。
@@ -308,42 +315,31 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
             }));
 });
 
-var app = builder.Build();
-
+// var app = builder.Build(); 之后，认证中间件附近追加/调整：
 app.UseAuthentication();
 app.UseRateLimiter();  // 依赖用户身份的限流策略要放在认证之后
 app.UseAuthorization();
 
-app.MapControllers().RequireRateLimiting("default");
-app.Run();`}
+// 已有 MapControllers 处改为：
+app.MapControllers().RequireRateLimiting("default");`}
           language="csharp"
-          title="Program.cs"
+          title="Program.cs — 追加限流（勿整文件覆盖）"
         />
 
         <LessonCode
           code={`// Controllers/AuthController.cs
-[ApiController]
-[Route("api/[controller]")]
-public class AuthController : ControllerBase
-{
-    [HttpPost("login")]
-    [EnableRateLimiting("login")]  // 应用登录限流策略
-    public async Task<IActionResult> Login(LoginRequest dto)
-    {
-        // 登录逻辑
-        return Ok(new { token = "..." });
-    }
+// 顶部 using 追加（不要整文件覆盖 Auth 章已有实现）：
+using Microsoft.AspNetCore.RateLimiting;
 
-    [HttpPost("register")]
-    // MapControllers().RequireRateLimiting("default") 会应用默认策略
-    public async Task<IActionResult> Register(RegisterRequest dto)
-    {
-        // 注册逻辑
-        return Ok();
-    }
+// 在已有 Login 端点上追加特性，保留 AuthService 注入与真实登录逻辑：
+[HttpPost("login")]
+[EnableRateLimiting("login")]
+public async Task<IActionResult> Login(LoginRequest request)
+{
+    // 保留 Auth 章已有实现：var response = await _auth.LoginAsync(request);
 }`}
           language="csharp"
-          title="AuthController.cs"
+          title="AuthController.cs — 仅追加限流特性"
         />
 
         <h4>检查点</h4>
@@ -613,8 +609,10 @@ docker stats taskhub-normal taskhub-aot`}
         </LessonQuote>
 
         <LessonCode
-          code={`// AppJsonSerializerContext.cs
+          code={`// TaskHub.Api/AppJsonSerializerContext.cs
 using System.Text.Json.Serialization;
+using TaskHub.Api.Models.Requests;
+using TaskHub.Core.Models;
 
 [JsonSerializable(typeof(LoginRequest))]
 [JsonSerializable(typeof(WorkItemSummaryDto))]
