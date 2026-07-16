@@ -76,36 +76,53 @@ public async Task<List<WorkItemSummaryDto?>> GetWorkItemsAsync(string[] ids)
         ]}
       />
 
+      <p>
+        <code>HeavyComputation</code> 是普通同步方法，本身不返回 Task，不能直接{" "}
+        <code>await</code>。它会堵在当前请求线程上。
+        <code>Task.Run</code> 把计算搬到线程池，<code>await</code> 再等结果——两步各管一件事。
+      </p>
       <LessonCode
-        code={`// CPU 绑定操作 — 不要在请求线程里直接跑重计算
+        code={`// HeavyComputation 是同步方法，不能直接 await
+int HeavyComputation(int n) { /* 重计算 */ }
+
 public async Task<int> ComputeExpensiveAsync(int n)
 {
-    // 错误：直接阻塞当前请求线程
+    // 错误 1：直接调用 → 堵在请求线程上
     // return HeavyComputation(n);
 
-    // 临时可用：把短时间 CPU 计算放到线程池，并始终 await
+    // 错误 2：Task.Run 但不 await → 请求立刻返回，结果还没算完
+    // return Task.Run(() => HeavyComputation(n));
+
+    // 正确：Task.Run 搬到线程池 + await 等结果
     return await Task.Run(() => HeavyComputation(n));
 }`}
         language="csharp"
         title="CPU 绑定操作的处理"
       />
-
       <LessonQuote>
         在 ASP.NET Core 请求链路里，<code>Task.Run()</code> 不是免费的性能优化。长时间 CPU
         任务会继续占用线程池，更适合放到后台队列、<code>BackgroundService</code> 或独立 Worker。
+        短时间计算用 <code>Task.Run</code> 是临时手段，不是默认方案。
       </LessonQuote>
 
-      <h4>CancellationToken</h4>
+      <h4>CancellationToken — 请求取消信号</h4>
       <p>
-        Web API 请求取消、客户端断开或超时时，应该把 <code>CancellationToken</code>{" "}
-        从 Controller 传到 Service、EF Core 和 HttpClient，避免后台继续做无意义工作。
+        客户端关掉页面、请求超时、或用户取消操作时，ASP.NET Core 会给当前请求一个{" "}
+        <code>CancellationToken</code>。你要做的是把它<strong>一路往下传</strong>：
+        Controller → Service → EF Core / HttpClient。底层库收到取消信号后，会停掉还在跑的数据库查询或 HTTP 调用，避免「人已经走了，服务器还在白干活」。
+      </p>
+      <p>
+        不传会怎样？用户刷新页面取消了旧请求，你的服务仍然会把 SQL 跑完、把外部 API 调完，浪费连接和线程。
+        ASP.NET Core 会自动把请求的 token 注入到 Action 参数里，你只要声明参数并继续传递即可。
       </p>
       <LessonCode
-        code={`[HttpGet("{id}")]
+        code={`// ASP.NET Core 自动注入请求级 CancellationToken
+[HttpGet("{id}")]
 public async Task<ActionResult<WorkItemSummaryDto>> GetById(
     string id,
-    CancellationToken cancellationToken)
+    CancellationToken cancellationToken)  // 客户端断开时，这个 token 会被取消
 {
+    // 继续往下传，不要在中间丢弃
     var item = await _workItemService.GetByIdAsync(id, cancellationToken);
     return item is null ? NotFound() : Ok(item);
 }
@@ -114,6 +131,8 @@ public async Task<WorkItemSummaryDto?> GetByIdAsync(
     string id,
     CancellationToken cancellationToken)
 {
+    // EF Core / HttpClient 的 *Async 方法都支持 token
+    // 取消后会抛 OperationCanceledException，请求自然结束
     return await _context.WorkItems
         .AsNoTracking()
         .Where(item => item.Id == id)
@@ -130,12 +149,71 @@ public async Task<WorkItemSummaryDto?> GetByIdAsync(
         title="传递 CancellationToken"
       />
 
+      <h4>不要 .Result / .Wait() — 始终 await</h4>
+      <p>
+        <code>.Result</code> 和 <code>.Wait()</code> 是<strong>同步阻塞</strong>等 Task 完成。
+        问题不在「拿结果」，而在：当前线程被堵死，等异步回调；而某些环境下回调又要回到这个被堵死的线程才能继续——两边互相等，就是死锁。
+      </p>
+      <p>
+        在 ASP.NET Core 里更常见的伤害是：请求线程被占着不放，高并发时线程池耗尽，整站变慢。
+        正确做法：方法链里只要出现异步，就一路 <code>async</code>/<code>await</code> 到底，不要中途用同步方式「卡住等」。
+      </p>
+      <LessonCode
+        code={`// ❌ 错误：同步阻塞异步
+var item = GetWorkItemAsync(id).Result;   // 堵当前线程
+GetWorkItemAsync(id).Wait();              // 同上
+var item2 = GetWorkItemAsync(id).GetAwaiter().GetResult(); // 还是阻塞
+
+// ✅ 正确：一路 await
+var item3 = await GetWorkItemAsync(id);`}
+        language="csharp"
+        title="永远 await，不要 .Result / .Wait"
+      />
+
+      <h4>ConfigureAwait(false) — 库代码才需要关心</h4>
+      <p>
+        <code>await</code> 默认会尝试<strong>回到原来的同步上下文</strong>（比如旧版 ASP.NET、UI 线程）继续执行。
+        在通用库 / NuGet 包里，你通常不需要这个上下文，回到它只是多余开销，甚至在错误场景下加剧死锁。
+      </p>
+      <p>
+        所以规则很简单：
+      </p>
+      <ul>
+        <li>
+          <strong>写库代码</strong>（可复用的类库）：用{" "}
+          <code>await xxx.ConfigureAwait(false)</code>
+        </li>
+        <li>
+          <strong>写 ASP.NET Core 应用代码</strong>（Controller、Service）：一般<strong>不用写</strong>。
+          ASP.NET Core 本身没有旧式同步上下文，默认 await 就够了。
+        </li>
+      </ul>
+      <LessonCode
+        code={`// 库代码示例：不依赖 HttpContext / UI 线程
+public async Task<string> ReadConfigAsync(string path)
+{
+    // ConfigureAwait(false) = 完成后不必回到调用方原来的上下文
+    var text = await File.ReadAllTextAsync(path).ConfigureAwait(false);
+    return text.Trim();
+}
+
+// ASP.NET Core 业务代码：直接 await 即可，不必到处写 ConfigureAwait
+public async Task<WorkItemSummaryDto?> GetByIdAsync(string id, CancellationToken ct)
+{
+    return await _context.WorkItems
+        .AsNoTracking()
+        .FirstOrDefaultAsync(item => item.Id == id, ct);
+}`}
+        language="csharp"
+        title="ConfigureAwait：库写 false，应用通常不写"
+      />
+
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
         description={
           <p>
-            已能区分 I/O 异步和 CPU 计算，并知道 Web API 代码里不能用
-            <code>.Result</code> / <code>.Wait()</code> 阻塞异步链路。
+            已能区分 I/O 异步和 CPU 计算，知道 CancellationToken 要一路下传，
+            并且 Web API 代码里不能用 <code>.Result</code> / <code>.Wait()</code> 阻塞异步链路。
           </p>
         }
         id="csharp-async-no-blocking"
@@ -149,26 +227,19 @@ public async Task<WorkItemSummaryDto?> GetByIdAsync(
             <strong>I/O 绑定</strong> → 直接用 async/await（HTTP、数据库、文件）
           </li>
           <li>
-            <strong>CPU 绑定</strong> → 用 Task.Run() 或 Parallel
+            <strong>CPU 绑定</strong> → 短任务可用 Task.Run，长任务放后台队列 / Worker
           </li>
           <li>
-            <strong>请求取消</strong> → 传递 CancellationToken 到数据库和 HTTP 调用
+            <strong>请求取消</strong> → CancellationToken 从 Controller 传到 DB / HTTP
           </li>
           <li>
-            <strong>不要 .Result 或 .Wait()</strong> → 会产生死锁，始终 await
+            <strong>不要 .Result 或 .Wait()</strong> → 同步阻塞异步，始终 await
           </li>
           <li>
-            <strong>ConfigureAwait(false)</strong> →
-            库代码中使用，避免不必要的上下文切换
+            <strong>ConfigureAwait(false)</strong> → 库代码用；ASP.NET Core 业务代码通常不写
           </li>
         </ol>
       </TeacherTask>
-
-      <LessonQuote>
-        在 Web API 代码里使用 <code>.Result</code> 或 <code>.Wait()</code>{" "}
-        是最常见的异步错误，会在高并发下导致线程池耗尽甚至死锁。只要方法链里有异步，就一路{" "}
-        <code>async</code>/<code>await</code> 到底。
-      </LessonQuote>
 
       <h3>委托、事件与 Lambda</h3>
       <p>

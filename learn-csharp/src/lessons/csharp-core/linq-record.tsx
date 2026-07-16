@@ -118,8 +118,15 @@ var first = workItems.Where(item => item.Status == WorkItemStatus.InProgress).Fi
       />
 
       <h3>模式匹配</h3>
+      <p>
+        C# 有<strong>两种 switch</strong>：
+        <code>switch</code> <strong>语句</strong>（传统写法，处理控制流）
+        和 <code>switch</code> <strong>表达式</strong>（C# 8+，用于求值）。
+        两者变量位置相反——语句沿用 C 风格 <code>switch(x)</code>，表达式写成 <code>x switch {'{}'}</code> 是因为它本质上是表达式，放在赋值/返回的位置更自然。
+      </p>
       <LessonCode
-        code={`// switch 表达式（C# 8+，比 TS switch 更强大）
+        code={`// switch 表达式：一个值进、一个值出（类似更强大的三元运算符）
+// 适合把输入映射成输出，每个分支必须返回结果
 string GetStatus(int code) => code switch
 {
     200 => "OK",
@@ -129,7 +136,8 @@ string GetStatus(int code) => code switch
     _ => "Unknown"                   // default
 };
 
-// 类型模式
+// switch 语句：根据不同情况执行不同逻辑
+// 适合分支里需要做多件事、或需要 when 守卫条件的场景
 void Process(object obj)
 {
     switch (obj)
@@ -144,18 +152,27 @@ void Process(object obj)
       />
 
       <h3>扩展方法</h3>
+      <p>
+        扩展方法可以给已有类型"添加"方法，不需要继承或修改原类型。关键在第一个参数前面的 <code>this</code> 关键字——它告诉编译器这个方法挂在哪个类型上。<code>StringExtensions</code> 只是约定俗成的命名，真正决定"扩展 string"的是 <code>this string str</code>。
+      </p>
+      <p>
+        扩展方法必须写在 <code>static class</code> 里，通常放在 <code>Extensions/</code> 目录下按类型拆分（如 <code>StringExtensions.cs</code>），再通过命名空间引入。
+      </p>
       <LessonCode
-        code={`// 为现有类型添加方法，不需要继承
+        code={`using System.Text.RegularExpressions;
+
+// static class + this 关键字 = 扩展方法
 public static class StringExtensions
 {
+    // this string str → 扩展的是 string 类型
     public static bool IsEmail(this string str)
         => Regex.IsMatch(str, @"^[^@]+@[^@]+\\.[^@]+$");
 }
 
-// 使用
+// 调用方看起来就像 string 原生方法
 "hello@world.com".IsEmail();   // true`}
         language="csharp"
-        title="扩展方法"
+        title="Extensions/StringExtensions.cs"
       />
 
       <h3>Record 类型 — 值语义 DTO</h3>
@@ -212,29 +229,28 @@ var updated = item with { Status = WorkItemStatus.InProgress };`}
 
       <h3>与 EF Core 结合的 LINQ</h3>
       <p>
-        在 EF Core 中，LINQ 会被翻译成 SQL。在数据库层直接投影成 DTO，可以避免加载完整实体。
+        在 EF Core 中，LINQ 会被翻译成 SQL。同一个业务需求（比如「任务列表要显示负责人名字」）通常有两种实现路径：
       </p>
       <LessonCode
-        code={`// 包含关联数据 — 类似 TypeORM 的 relations
-var projectWithMembers = await context.Projects
-    .Include(project => project.Members)
-    .Where(project => project.IsActive)
-    .ToListAsync();
+        code={`// 场景：任务列表需要负责人名字，数据在两张表（WorkItems + Users）
 
-// 在数据库层直接投影成 DTO
-var workItemDtos = await context.WorkItems
-    .Where(item => item.ProjectId == projectId)
-    .OrderByDescending(item => item.UpdatedAt)
-    .Select(item => new WorkItemSummaryDto(
-        item.Id,
-        item.ProjectId,
-        item.Title,
-        item.Status,
-        item.Assignee == null ? null : item.Assignee.Username,
-        item.DueDate))
+// 方案 A：Include — 加载完整 User 实体
+// 适合：后面要改这条任务、改负责人，需要 SaveChanges
+var items = await context.WorkItems
+    .Include(w => w.Assignee)   // 整个 User 实体进内存，进 Change Tracker
+    .ToListAsync();
+// items[0].Assignee.Username
+
+// 方案 B：Select 投影 — 只取需要的字段
+// 适合：列表只读展示，不改库，少传字段、不进 Change Tracker
+var dtos = await context.WorkItems
+    .Select(w => new WorkItemSummaryDto(
+        w.Id,
+        w.Title,
+        w.Assignee == null ? null : w.Assignee.Username))  // SQL 只查这一列
     .ToListAsync();`}
         language="csharp"
-        title="LINQ to EF Core"
+        title="EF Core 查询：同一个需求的两种路径"
       />
 
       <h3>写入 TaskHub.Core</h3>
