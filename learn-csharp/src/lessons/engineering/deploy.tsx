@@ -32,7 +32,16 @@ export const EngineeringDeployLesson = ({
 
       <h3>速率限制</h3>
       <p>
-        .NET 7+ 内置 Rate Limiting，无需额外安装包。通过策略区分不同场景：全局默认限额、认证用户更高限额、登录端点更严格限额。
+        .NET 7+ 内置 Rate Limiting，无需额外安装包——对应 NestJS 的{" "}
+        <code>@nestjs/throttler</code>，或前端网关/Nginx 的限流规则。通过命名策略区分场景：全局默认限额、认证用户更高限额、登录端点更严格限额。
+      </p>
+      <p>
+        核心概念：
+        <strong>Partition（分区键）</strong>
+        决定「按什么计数」（IP、用户名）；
+        <strong>FixedWindow</strong>
+        是固定时间窗（如每秒/每分钟重置计数），像「这一分钟最多 N
+        次」；超限默认返回 <code>429 Too Many Requests</code>。
       </p>
       <LessonCode
         code={`// Program.cs 顶部 using：
@@ -42,7 +51,11 @@ using Microsoft.AspNetCore.RateLimiting;
 // builder.Services 部分：
 builder.Services.AddRateLimiter(rateLimiterOptions =>
 {
-    // 默认策略：每 IP 每秒 10 请求。注意：命名策略需要绑定到端点才会生效。
+    // AddPolicy 只是注册命名策略，不会自动全局生效
+    // GetFixedWindowLimiter(partitionKey, optionsFactory)
+    //   partitionKey：按谁计数（这里按 IP）
+    //   Window / PermitLimit：窗口内允许的请求数
+    //   QueueLimit：窗口满后最多排队几个；0 = 直接 429
     rateLimiterOptions.AddPolicy("default", context =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown-ip",
@@ -54,7 +67,7 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
                 QueueLimit = 5
             }));
 
-    // 认证用户更高限额
+    // 认证用户更高限额（partition 换成用户名，已登录才能用）
     rateLimiterOptions.AddPolicy("authed", context =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.User.Identity?.Name ?? "",
@@ -64,7 +77,7 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
                 Window = TimeSpan.FromSeconds(1)
             }));
 
-    // 登录端点：每 IP 每分钟 5 次
+    // 登录端点：每 IP 每分钟 5 次（防暴力破解）
     rateLimiterOptions.AddPolicy("login", context =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "",
@@ -75,10 +88,12 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
             }));
 });
 
+// 顺序重要：依赖 User 身份的策略必须放在 UseAuthentication 之后
 app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
 
+// 把 default 策略绑到所有 Controller 端点（否则 AddPolicy 等于白注册）
 app.MapControllers().RequireRateLimiting("default");`}
         language="csharp"
         title="注册限流策略"
@@ -89,14 +104,15 @@ app.MapControllers().RequireRateLimiting("default");`}
         明确绑定；登录接口再用 <code>[EnableRateLimiting("login")]</code> 覆盖为更严格策略。
       </LessonQuote>
       <p>
-        在端点上用 <code>[EnableRateLimiting]</code> 指定要应用的策略：
+        在端点上用 <code>[EnableRateLimiting]</code>{" "}
+        指定策略（覆盖 MapControllers 上的 default）：
       </p>
       <LessonCode
         code={`// Controllers/AuthController.cs 顶部 using 追加：
 using Microsoft.AspNetCore.RateLimiting;
 
 [HttpPost("login")]
-[EnableRateLimiting("login")]  // 使用指定策略
+[EnableRateLimiting("login")]  // 覆盖 default，改用更严的 login 策略
 public async Task<IActionResult> Login(LoginRequest dto) { ... }`}
         language="csharp"
         title="在端点应用限流策略"
@@ -106,50 +122,115 @@ public async Task<IActionResult> Login(LoginRequest dto) { ... }`}
       <LessonQuote>
         镜像版本要和项目 <code>TargetFramework</code> 保持一致。下面以{" "}
         <code>net10.0</code> 为例；如果项目使用 <code>net8.0</code>，则把镜像标签改成{" "}
-        <code>8.0</code>。
+        <code>8.0</code>。标签对不上时，运行时可能直接起不来或缺少 API。
       </LessonQuote>
       <TeacherTask title="多阶段构建">
         <p>
           Dockerfile 用多阶段构建：在 <code>sdk</code> 镜像里 restore / build /
           publish，再把产物复制进体积更小的 <code>aspnet</code>
-          运行时镜像，最终镜像不含 SDK，更小更安全。
+          运行时镜像，最终镜像不含 SDK，更小更安全。前端同学可类比：用 Node
+          镜像 <code>npm run build</code>，再用 nginx 镜像只拷{" "}
+          <code>dist/</code>。
         </p>
       </TeacherTask>
+      <LessonTable
+        headers={["阶段", "基础镜像", "干什么"]}
+        rows={[
+          [
+            "base",
+            "aspnet:10.0",
+            "只含运行时；给 final 复用，体积小",
+          ],
+          [
+            "build",
+            "sdk:10.0",
+            "restore + build；含编译器，最终镜像不要它",
+          ],
+          [
+            "publish",
+            "继承 build",
+            "dotnet publish 产出可部署文件",
+          ],
+          [
+            "final",
+            "继承 base",
+            "只 COPY 发布产物 + ENTRYPOINT",
+          ],
+        ]}
+      />
       <LessonCode
-        code={`FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
+        code={`# base：运行时基底（无 SDK）
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
 EXPOSE 8080
 EXPOSE 8081
 
+# build：SDK 镜像，负责编译
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
+# 先只 COPY csproj → restore：依赖不变时命中 Docker 层缓存（≈ 先 copy package.json 再 npm i）
 COPY ["TaskHub.Api/TaskHub.Api.csproj", "TaskHub.Api/"]
 COPY ["TaskHub.Core/TaskHub.Core.csproj", "TaskHub.Core/"]
 COPY ["TaskHub.Infrastructure/TaskHub.Infrastructure.csproj", "TaskHub.Infrastructure/"]
 RUN dotnet restore "TaskHub.Api/TaskHub.Api.csproj"
+# 再 COPY 源码（源码变了不会让 restore 层失效）
 COPY . .
 WORKDIR "/src/TaskHub.Api"
 RUN dotnet build "TaskHub.Api.csproj" -c Release -o /app/build
 
+# publish：从 build 继续，产出发布目录
 FROM build AS publish
+# UseAppHost=false：不生成原生 apphost 可执行文件，容器里用 dotnet xxx.dll 启动即可
 RUN dotnet publish "TaskHub.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
+# final：只拿运行时 + 发布产物
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+# 监听所有网卡 8080（容器内；宿主机映射用 -p）
 ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENTRYPOINT ["dotnet", "TaskHub.Api.dll"]`}
         language="dockerfile"
         title="多阶段构建 Dockerfile"
       />
+      <p>
+        关键 flag / 指令副作用：
+      </p>
+      <ul>
+        <li>
+          <code>dotnet restore</code>：还原 NuGet 包到本地缓存；失败通常是源或 csproj
+          路径问题。
+        </li>
+        <li>
+          <code>-c Release</code>：发布配置，开启优化、关掉部分调试符号。
+        </li>
+        <li>
+          <code>/p:UseAppHost=false</code>
+          ：不生成平台相关的启动壳，减小产物；容器内用{" "}
+          <code>dotnet TaskHub.Api.dll</code> 启动。
+        </li>
+        <li>
+          <code>ASPNETCORE_URLS=http://+:8080</code>
+          ：绑定 0.0.0.0:8080，否则容器外 <code>-p 8080:8080</code>{" "}
+          可能连不上（默认有时只听 localhost）。
+        </li>
+        <li>
+          <code>ASPNETCORE_ENVIRONMENT=Production</code>
+          ：走生产配置（更少详细错误页、读 Production 配置覆盖）。
+        </li>
+      </ul>
 
       <h3>AOT（提前编译）</h3>
       <p>
-        AOT 在发布时直接编译成原生机器码，启动更快、镜像更小，但有明显的兼容性限制。发布命令：
+        AOT（Ahead-of-Time）在<strong>发布时</strong>
+        把 IL 编成原生机器码，产物是原生可执行文件，不再依赖目标机上的{" "}
+        <code>dotnet</code> 主机跑 DLL。收益：启动更快、镜像更小；代价：编译更慢、反射/动态加载受限。前端无完全对应；可粗比「构建期把 JS
+        编成原生扩展」——发布形态变了，不是日常{" "}
+        <code>dotnet run</code> 的替代。
       </p>
       <LessonCode
-        code={`# 完整发布命令
+        code={`# 完整发布命令（确认库兼容后再用；不是开发期默认）
 dotnet publish TaskHub.Api/TaskHub.Api.csproj -c Release -r linux-x64 \\
     -p:PublishAot=true \\
     -p:StripSymbols=true \\
@@ -159,12 +240,35 @@ dotnet publish TaskHub.Api/TaskHub.Api.csproj -c Release -r linux-x64 \\
         title="AOT 发布"
       />
 
-      <p>
-        这条命令的核心是 <code>dotnet publish</code>：它生成可部署产物。
-        <code>-c Release</code> 使用发布配置，<code>-r linux-x64</code>{" "}
-        指定目标运行平台，<code>PublishAot=true</code> 打开 AOT，<code>-o</code>{" "}
-        指定输出目录。它不是普通开发启动命令，适合在确认兼容性后用于发布阶段。
-      </p>
+      <p>参数拆解：</p>
+      <ul>
+        <li>
+          <code>dotnet publish</code>：生成可部署产物（≈{" "}
+          <code>npm run build</code> 出 dist），不是 <code>dotnet run</code>。
+        </li>
+        <li>
+          <code>-c Release</code>：发布配置。
+        </li>
+        <li>
+          <code>-r linux-x64</code>
+          ：RID（Runtime Identifier），指定目标 OS/CPU；AOT
+          必须交叉编译到明确平台，换机器架构要重发。
+        </li>
+        <li>
+          <code>-p:PublishAot=true</code>：打开原生 AOT。
+        </li>
+        <li>
+          <code>-p:StripSymbols=true</code>
+          ：剥离调试符号，体积更小，排错信息更少。
+        </li>
+        <li>
+          <code>-p:DebuggerSupport=false</code>
+          ：去掉调试器支持，进一步瘦身。
+        </li>
+        <li>
+          <code>-o ./publish/aot</code>：输出目录。
+        </li>
+      </ul>
 
       <h4>AOT 的限制</h4>
       <LessonTable
@@ -195,21 +299,53 @@ dotnet publish TaskHub.Api/TaskHub.Api.csproj -c Release -r linux-x64 \\
         <li>❌ 大型单体应用（编译慢、限制多）</li>
         <li>❌ 需要动态插件的系统</li>
       </ul>
+      <LessonQuote>
+        边界：TaskHub 这种带 EF Core + 可能 SignalR 的教学项目，默认用普通{" "}
+        <code>dotnet publish</code> / 多阶段 Docker 即可。AOT
+        是「确认兼容后的优化项」，不是工程化必选项。
+      </LessonQuote>
 
       <h3>普通发布命令</h3>
       <LessonCode
-        code={`# 普通发布（非 AOT）
+        code={`# 框架依赖发布（默认）：产物是 DLL，目标机需安装匹配的 .NET Runtime
 dotnet publish TaskHub.Api/TaskHub.Api.csproj -c Release -o ./publish
 
-# 发布 + 自包含（发布产物包含 .NET 运行时，不要求目标机器预装 runtime）
+# 自包含发布：Runtime 打进产物，目标机可不预装 .NET；体积明显变大
+# -r 指定目标平台；--self-contained 打开自包含
 dotnet publish TaskHub.Api/TaskHub.Api.csproj -c Release -r linux-x64 --self-contained -o ./publish`}
         language="bash"
         title="普通发布与自包含发布"
       />
 
       <p>
-        普通发布默认是框架依赖发布，目标机器需要安装匹配的 .NET Runtime；
-        <code>--self-contained</code> 会把 Runtime 一起打进发布产物，部署更独立，但体积更大。初学阶段先理解普通发布，再评估是否需要自包含或 AOT。
+        三种发布形态对照：
+      </p>
+      <LessonTable
+        headers={["形态", "产物", "目标机要求", "何时用"]}
+        rows={[
+          [
+            "框架依赖（默认 publish）",
+            "DLL + 依赖",
+            "需装 .NET Runtime",
+            "容器用 aspnet 镜像时首选",
+          ],
+          [
+            "自包含 --self-contained",
+            "含 Runtime 的目录/可执行文件",
+            "可不装 Runtime",
+            "裸机/无 Runtime 环境",
+          ],
+          [
+            "AOT PublishAot",
+            "原生可执行文件",
+            "无 .NET 主机依赖",
+            "冷启动/体积敏感且库兼容",
+          ],
+        ]}
+      />
+      <p>
+        初学阶段先掌握框架依赖 + Docker 多阶段；自包含和 AOT
+        是部署约束出现后再评估。
       </p>
 
       <h3>.NET 生态总览：常见 NuGet 包速查</h3>

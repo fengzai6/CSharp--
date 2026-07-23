@@ -31,26 +31,106 @@ export const CsharpAsyncLesson = ({
       <p>
         C# 的异步基础模式和 TS 很像，但底层模型完全不同。先看写法，再理解差异。
       </p>
+      <p>
+        先记住三条命名与返回类型约定——后面 EF Core、HttpClient、Service 接口都会反复出现：
+      </p>
+      <ul>
+        <li>
+          <strong>方法名加 <code>Async</code> 后缀</strong>：
+          <code>GetWorkItemAsync</code> 一眼告诉调用方「这是异步方法，要 <code>await</code>」。
+          TS 里没有强制约定；C# 社区把它当规范，库和框架都这么写。
+        </li>
+        <li>
+          <strong>
+            返回 <code>Task</code> 或 <code>Task&lt;T&gt;</code>
+          </strong>
+          ：无返回值用 <code>Task</code>（≈ <code>Promise&lt;void&gt;</code>），有返回值用{" "}
+          <code>Task&lt;T&gt;</code>（≈ <code>Promise&lt;T&gt;</code>）。
+          写了 <code>async</code> 的方法，编译器会自动包成 Task，你不必 <code>return Task.FromResult(...)</code>。
+        </li>
+        <li>
+          <strong>禁止 <code>async void</code></strong>（事件处理器除外）：
+          TS 的 <code>async function</code> 总是返回 Promise，调用方还能 <code>.catch</code>。
+          C# 的 <code>async void</code> 不返回 Task，异常会直接冲到调用线程，几乎无法捕获。
+          只在 UI / 事件回调里不得不用时才写 <code>async void</code>。
+        </li>
+      </ul>
+
+      <LessonTable
+        headers={["C#", "TS / JS 近似", "说明"]}
+        rows={[
+          ["Task", "Promise<void>", "无结果的异步操作"],
+          ["Task<T>", "Promise<T>", "有结果的异步操作"],
+          ["await task", "await promise", "写法几乎一样"],
+          ["Task.WhenAll(tasks)", "Promise.all(promises)", "等全部完成，返回结果数组"],
+          ["Task.WhenAny(tasks)", "Promise.race(promises)", "等第一个完成（返回的是那个 Task，不是结果本身）"],
+          ["Task.FromResult(v)", "Promise.resolve(v)", "已完成的 Task，立刻有值"],
+          ["Task.CompletedTask", "Promise.resolve()", "已完成、无返回值的 Task"],
+          ["Task.Run(() => ...)", "无直接对应", "把 CPU 工作丢到线程池（见下文）"],
+        ]}
+      />
 
       <LessonCode
-        code={`// 基础模式
+        code={`// 返回 Task<T?> — 有结果；方法名 Async 后缀是约定
 public async Task<WorkItemSummaryDto?> GetWorkItemAsync(string id)
 {
+    // GetAsync 返回 Task<HttpResponseMessage>，await 后拿响应
     var response = await httpClient.GetAsync($"/api/work-items/{id}");
+    // 非 2xx 直接抛 HttpRequestException（类似 fetch 后自己判 !res.ok 再 throw）
     response.EnsureSuccessStatusCode();
+    // 读响应体也是异步 I/O
     var json = await response.Content.ReadAsStringAsync();
+    // 同步反序列化；System.Text.Json 的 Deserialize，≈ JSON.parse + 类型
     return JsonSerializer.Deserialize<WorkItemSummaryDto>(json);
 }
 
-// 并行执行 — 类似 Promise.all
+// 并行 — 类似 Promise.all
 public async Task<List<WorkItemSummaryDto?>> GetWorkItemsAsync(string[] ids)
 {
+    // Select 立刻调用 GetWorkItemAsync → 每个请求已经发出去了
+    // 这里得到的是 Task[]，不是「还没跑的函数」
     var tasks = ids.Select(id => GetWorkItemAsync(id)).ToArray();
+    // WhenAll 等全部完成，返回结果数组
     return (await Task.WhenAll(tasks)).ToList();
 }`}
         language="csharp"
         title="异步基础模式"
       />
+      <p>
+        对照上面两段代码，逐行在干什么：
+      </p>
+      <ul>
+        <li>
+          <code>httpClient.GetAsync(...)</code>：发 HTTP 请求，返回{" "}
+          <code>Task&lt;HttpResponseMessage&gt;</code>。类似 <code>fetch</code>，但不会自动抛非 2xx。
+        </li>
+        <li>
+          <code>EnsureSuccessStatusCode()</code>：状态码不是 2xx 就抛异常。
+          TS 里你常写 <code>if (!res.ok) throw ...</code>，这里一行搞定。
+        </li>
+        <li>
+          <code>ReadAsStringAsync()</code>：异步读响应体字符串。对应{" "}
+          <code>await res.text()</code>。
+        </li>
+        <li>
+          <code>JsonSerializer.Deserialize&lt;T&gt;(json)</code>：把 JSON 变成强类型对象。
+          类似 <code>JSON.parse</code>，但带类型参数；属性名默认大小写不敏感匹配。
+        </li>
+        <li>
+          <code>ids.Select(id =&gt; GetWorkItemAsync(id))</code>：
+          <strong>调用当下就启动</strong>每个异步请求，得到已经在跑的 Task 集合。
+          不是「把函数存起来晚点再调」。
+        </li>
+        <li>
+          <code>Task.WhenAll(tasks)</code>：等这一批 Task 全部完成。
+          等价 <code>Promise.all([p1, p2])</code>——传的是已经启动的 Promise，
+          <strong>不是</strong> <code>Promise.all([() =&gt; fetch(...), ...])</code> 那种函数数组。
+        </li>
+      </ul>
+      <LessonQuote>
+        并行的关键：先把 Task 全部启动，再 <code>WhenAll</code>。
+        如果写成 <code>foreach</code> 里一个个 <code>await GetWorkItemAsync(id)</code>，就是串行，总耗时是累加而不是取最长。
+      </LessonQuote>
 
       <LessonCheckpoint
         completedChecklistIds={completedChecklistIds}
@@ -75,6 +155,13 @@ public async Task<List<WorkItemSummaryDto?>> GetWorkItemsAsync(string[] ids)
           ["CPU 密集", "会阻塞单线程", "短任务可 Task.Run，长任务用后台队列 / Worker"],
         ]}
       />
+      <p>
+        一句话类比线程池：C# 服务器有一组可复用的工作线程。
+        <strong>I/O 等待</strong>（HTTP、数据库、文件）期间线程可以去干别的，所以直接{" "}
+        <code>await</code> 就对了，不必 <code>Task.Run</code>。
+        <strong>CPU 重计算</strong>会一直占着当前线程；请求链路里才考虑{" "}
+        <code>Task.Run</code> 把它挪到线程池另一条线上，避免堵请求。
+      </p>
 
       <p>
         <code>HeavyComputation</code> 是普通同步方法，本身不返回 Task，不能直接{" "}
@@ -243,37 +330,73 @@ public async Task<WorkItemSummaryDto?> GetByIdAsync(string id, CancellationToken
 
       <h3>委托、事件与 Lambda</h3>
       <p>
-        C# 的 <code>Func&lt;T, R&gt;</code> 类似 TS 的函数签名{" "}
-        <code>(T) =&gt; R</code>，<code>Action&lt;T&gt;</code> 类似{" "}
-        <code>(T) =&gt; void</code>。Lambda 语法和 TS 完全一致。
+        C# 的「委托」就是<strong>类型化的函数引用</strong>。
+        最常用两个内置委托：
+      </p>
+      <ul>
+        <li>
+          <code>Func&lt;T1, T2, TResult&gt;</code> ≈ TS 的{" "}
+          <code>(t1: T1, t2: T2) =&gt; TResult</code>——有返回值
+        </li>
+        <li>
+          <code>Action&lt;T&gt;</code> ≈ TS 的 <code>(t: T) =&gt; void</code>——无返回值
+        </li>
+      </ul>
+      <p>
+        Lambda 写法 <code>(a, b) =&gt; a + b</code> 和 TS 几乎一样。
+        LINQ 的 <code>Where</code> / <code>Select</code> 参数，底层就是这些委托类型。
       </p>
 
       <LessonCode
-        code={`// Func / Action — 内置委托，最常用
-Func<int, int, int> add = (a, b) => a + b;
-Action<string> log = msg => Console.WriteLine(msg);
-Func<string, WorkItem> createItem = title => new WorkItem(Guid.NewGuid().ToString(), "project-1", title);
+        code={`// Func<入参..., 返回值>  — 有返回值
+// Action<入参...>        — 无返回值（void）
+Func<int, int, int> add = (a, b) => a + b;          // (a, b) => number
+Action<string> log = msg => Console.WriteLine(msg); // (msg) => void
+Func<string, WorkItem> createItem =
+    title => new WorkItem(Guid.NewGuid().ToString(), "project-1", title);
 
-int result = add(3, 4);  // 7
+int result = add(3, 4);  // 7 — 委托当普通函数调
 log("hello");`}
         language="csharp"
         title="Func 与 Action"
       />
 
+      <p>
+        <code>event</code> 是在委托外面再加一层<strong>受限访问</strong>：
+        外部只能 <code>+=</code> / <code>-=</code> 订阅或取消，
+        <strong>不能</strong>直接赋值覆盖，也不能从类外随意 <code>Invoke</code>。
+        类似「只暴露 on/off 的发布订阅」，不是普通函数字段。
+      </p>
       <LessonCode
         code={`public class WorkItemManager
 {
-    // 事件声明
+    // event = 受限的多播委托；外部只能 += / -=
     public event EventHandler<WorkItemChangedEventArgs>? WorkItemChanged;
 
     protected virtual void OnWorkItemChanged(WorkItem item, string action)
     {
+        // ?.Invoke：没有订阅者时 WorkItemChanged 为 null，直接跳过
+        // 有订阅者时，按订阅顺序依次调用所有处理函数
         WorkItemChanged?.Invoke(this, new WorkItemChangedEventArgs(item, action));
     }
-}`}
+}
+
+// 订阅 / 取消（类外部）
+// manager.WorkItemChanged += (sender, e) => { /* 处理 */ };
+// manager.WorkItemChanged -= handler;`}
         language="csharp"
         title="事件"
       />
+      <p>
+        <code>EventHandler&lt;TEventArgs&gt;</code> 是框架约定的事件签名：
+        <code>(object? sender, TEventArgs e)</code>。
+        <code>sender</code> 是发布者，<code>e</code> 是事件数据。
+        <code>?.Invoke(...)</code> 就是「有人订阅才通知」——空条件调用，避免空引用。
+      </p>
+      <LessonQuote>
+        业务代码里你更常<strong>订阅</strong>框架事件（如 SignalR、UI），
+        自己声明 <code>event</code> 的场景不多。先会读、会 <code>+=</code> 即可。
+      </LessonQuote>
 
       <h3>阶段验收问题</h3>
       <ul>

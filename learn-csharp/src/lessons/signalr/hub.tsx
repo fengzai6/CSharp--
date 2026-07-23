@@ -50,7 +50,8 @@ export const SignalrHubLesson = ({
       <h3>配置 Hub</h3>
       <LessonCode
         code={`# ASP.NET Core Web 项目已包含服务端 SignalR
-# 前端客户端另装：npm install @microsoft/signalr`}
+# 前端客户端另装：npm install @microsoft/signalr
+# 注意：socket.io-client 协议不兼容，连不上`}
         language="bash"
         title="SignalR 依赖"
       />
@@ -58,13 +59,19 @@ export const SignalrHubLesson = ({
       <p>
         服务端 SignalR 已随 ASP.NET Core Web 运行时提供，后端通常不需要额外安装服务端包。前端必须安装 <code>@microsoft/signalr</code>，不能复用 <code>socket.io-client</code>。
       </p>
+      <p>
+        <strong>Hub</strong> ≈ Socket.IO 的一个 namespace 上的 Gateway：客户端连到某个 URL，调用 Hub 上的公开方法，服务端再通过{" "}
+        <code>Clients</code> 推事件。差别：SignalR 是<strong>RPC 风格</strong>（调方法），Socket.IO 更常见{" "}
+        <code>emit/on</code> 事件名；协议不同，客户端库不能混用。
+      </p>
 
       <LessonCode
         code={`// Program.cs
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(); // 注册 SignalR 服务（协商、连接管理）
 
 var app = builder.Build();
 
+// 把 Hub 类映射到 URL 路径；前端 withUrl 要一致
 app.MapHub<ProjectNotificationHub>("/hubs/projects");
 
 app.Run();`}
@@ -82,11 +89,13 @@ export class ProjectGateway {
 }`}
         leftLanguage="typescript"
         rightTitle="ASP.NET Core SignalR"
-        rightCode={`[Authorize]
+        rightCode={`[Authorize] // 必须已认证才能连 / 调方法
 public class ProjectNotificationHub : Hub
 {
+    // 客户端：connection.invoke('JoinProject', projectId)
     public async Task JoinProject(string projectId)
     {
+        // Groups ≈ Socket.IO room，但是「连接级」：断线即离开
         await Groups.AddToGroupAsync(Context.ConnectionId, GetProjectGroup(projectId));
     }
 
@@ -97,14 +106,30 @@ public class ProjectNotificationHub : Hub
 
       <h4>服务端发送目标</h4>
       <LessonCode
-        code={`await Clients.Caller.SendAsync("Connected", data);          // 当前连接
-await Clients.All.SendAsync("SystemNotice", data);        // 所有连接
-await Clients.User(userId).SendAsync("DirectNotice", data); // 指定用户（多设备）
-await Clients.Group($"project:{projectId}").SendAsync("WorkItemUpdated", data); // 项目组
-await Clients.Groups(projectGroupIds).SendAsync("ProjectChanged", data);         // 多个项目组`}
+        code={`// SendAsync 第一个参数是「客户端监听的事件名」，后面是负载
+await Clients.Caller.SendAsync("Connected", data);          // 仅当前连接 ≈ socket.emit
+await Clients.All.SendAsync("SystemNotice", data);        // 所有连接 ≈ io.emit
+await Clients.User(userId).SendAsync("DirectNotice", data); // 该用户所有设备（靠 Claim NameIdentifier）
+await Clients.Group($"project:{projectId}").SendAsync("WorkItemUpdated", data); // 组内 ≈ io.to(room)
+await Clients.Groups(projectGroupIds).SendAsync("ProjectChanged", data);         // 多个组`}
         language="csharp"
         title="Clients 发送目标"
       />
+      <LessonTable
+        headers={["API", "发给谁", "Socket.IO 近似"]}
+        rows={[
+          ["Clients.Caller", "当前这条连接", "socket.emit"],
+          ["Clients.Others", "除自己外的连接", "socket.broadcast"],
+          ["Clients.All", "所有连接", "io.emit"],
+          ["Clients.Group(name)", "加入该组的连接", "io.to(room).emit"],
+          ["Clients.User(userId)", "该用户的所有连接", "按 user 房间自建"],
+        ]}
+      />
+      <LessonQuote>
+        <code>Group</code> 只记得「哪些 ConnectionId 在组里」，断线即丢。
+        业务上「是不是项目成员」永远以数据库 <code>ProjectMember</code> 为准；Join 时要先验成员再{" "}
+        <code>AddToGroupAsync</code>。
+      </LessonQuote>
 
       <h3>实现项目通知 Hub</h3>
       <p>

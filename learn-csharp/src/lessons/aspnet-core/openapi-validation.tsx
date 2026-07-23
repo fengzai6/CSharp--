@@ -30,8 +30,20 @@ export const AspnetOpenApiValidationLesson = ({
       </TeacherTask>
 
       <h3>数据验证</h3>
+      <p>
+        验证发生在「模型绑定之后、Action 之前」：请求 JSON 先变成 DTO 实例，再跑规则；失败则直接
+        400，进不了业务代码。对照 NestJS：就是全局{" "}
+        <code>ValidationPipe</code> + DTO 上的 class-validator 装饰器。
+      </p>
       <h4>方式一：Data Annotations</h4>
-      <p>类似 NestJS 的 class-validator，用属性标注在 DTO 字段上。这个 class 替换了上一节 <code>controller-di</code> 中的 <code>record CreateWorkItemRequest(string ProjectId, string Title)</code>，新增了 <code>Description</code>、<code>AssigneeId</code>、<code>DueDate</code> 字段：</p>
+      <p>
+        类似 NestJS 的 class-validator，用属性标注在 DTO 字段上。这个 class 替换了上一节{" "}
+        <code>controller-di</code> 中的{" "}
+        <code>record CreateWorkItemRequest(string ProjectId, string Title)</code>
+        ，新增了 <code>Description</code>、<code>AssigneeId</code>、
+        <code>DueDate</code> 字段。为何从 record 改成 class？DataAnnotations
+        和 FluentValidation 都更习惯可写属性；位置参数 record 也能验证，但教学示例用 class 更直观。
+      </p>
 
       <LessonCode
         code={`using System.ComponentModel.DataAnnotations;
@@ -40,11 +52,11 @@ namespace TaskHub.Api.Models.Requests;
 
 public class CreateWorkItemRequest
 {
-    [Required(ErrorMessage = "项目 ID 不能为空")]
+    [Required(ErrorMessage = "项目 ID 不能为空")] // ≈ @IsNotEmpty()
     public string ProjectId { get; set; } = string.Empty;
 
     [Required]
-    [StringLength(120, MinimumLength = 2)]
+    [StringLength(120, MinimumLength = 2)] // ≈ @Length(2, 120)
     public string Title { get; set; } = string.Empty;
 
     [StringLength(2000)]
@@ -60,16 +72,19 @@ public class CreateWorkItemRequest
         内置验证属性：<code>[Required]</code>、<code>[StringLength]</code>、{" "}
         <code>[EmailAddress]</code>、<code>[Phone]</code>、<code>[Range]</code>、{" "}
         <code>[RegularExpression]</code>、<code>[Url]</code>、{" "}
-        <code>[CreditCard]</code>。
+        <code>[CreditCard]</code>。简单字段够用；跨字段（「截止时间必须晚于现在」）写起来别扭，这时上 FluentValidation。
       </p>
 
       <h4>方式二：FluentValidation（推荐）</h4>
       <p>
-        对应 class-validator，但用独立类 + 链式 API，比装饰器更灵活，支持跨字段验证：
+        对应 class-validator，但规则写在<strong>独立验证器类</strong>里用链式
+        API，不污染 DTO，跨字段、异步、查库都更顺手。
       </p>
 
       <LessonCode
-        code={`dotnet add TaskHub.Api/TaskHub.Api.csproj package FluentValidation
+        code={`# 在解决方案根目录执行；把包加进 TaskHub.Api 项目的 PackageReference
+# 副作用：修改 TaskHub.Api.csproj，还原时会下载 NuGet 包
+dotnet add TaskHub.Api/TaskHub.Api.csproj package FluentValidation
 dotnet add TaskHub.Api/TaskHub.Api.csproj package FluentValidation.AspNetCore`}
         language="bash"
         title="安装 FluentValidation"
@@ -84,10 +99,12 @@ dotnet add TaskHub.Api/TaskHub.Api.csproj package FluentValidation.AspNetCore`}
       <LessonCode
         code={`using FluentValidation;
 
+// AbstractValidator<T>：T 是被验证的 DTO 类型
 public class CreateWorkItemRequestValidator : AbstractValidator<CreateWorkItemRequest>
 {
     public CreateWorkItemRequestValidator()
     {
+        // RuleFor 指定字段；链式 NotEmpty / Length 等类似 class-validator
         RuleFor(x => x.ProjectId)
             .NotEmpty()
             .WithMessage("项目 ID 不能为空");
@@ -98,11 +115,12 @@ public class CreateWorkItemRequestValidator : AbstractValidator<CreateWorkItemRe
             .MaximumLength(120)
             .WithMessage("任务标题长度应在 2-120 之间");
 
+        // When：仅当 Description 有值时才限制长度（null 跳过）
         RuleFor(x => x.Description)
             .MaximumLength(2000)
             .When(x => x.Description is not null);
 
-        // 跨字段验证
+        // 跨字段：RuleFor(x => x) 针对整个对象，class-validator 要自定义装饰器才好做
         RuleFor(x => x)
             .Must(x => x.DueDate is null || x.DueDate.Value > DateTime.UtcNow)
             .WithMessage("截止时间必须晚于当前时间");
@@ -121,7 +139,9 @@ using FluentValidation.AspNetCore;
 using TaskHub.Api.Validators;
 
 // 2. builder.Services 部分添加：
+// 接入 MVC 模型验证，失败自动 400（需配合 [ApiController]）
 builder.Services.AddFluentValidationAutoValidation();
+// 扫描 CreateWorkItemRequestValidator 所在程序集，注册所有 AbstractValidator<>
 builder.Services.AddValidatorsFromAssemblyContaining<CreateWorkItemRequestValidator>();`}
         language="csharp"
         title="注册验证器"
@@ -214,25 +234,32 @@ builder.Services.AddValidatorsFromAssemblyContaining<CreateWorkItemRequestValida
       />
 
       <p>
-        写完运行 <code>dotnet build TaskHub.Api</code> 确认编译通过。如果报 <code>Description</code> / <code>DueDate</code> 找不到，先确认已用 class 版覆盖旧 record；如果自动校验不生效，先确认 <code>Program.cs</code> 已注册 FluentValidation。
+        写完运行 <code>dotnet build TaskHub.Api</code> 确认编译通过。如果报 <code>Description</code> / <code>DueDate</code> 找不到，先确认已用 class 版覆盖旧 record；如果自动校验不生效，先确认 <code>Program.cs</code> 已注册 FluentValidation，且 Controller 上有 <code>[ApiController]</code>。
       </p>
 
       <h4>class-validator 与 FluentValidation 对比</h4>
       <LessonTable
         headers={["维度", "class-validator", "FluentValidation"]}
         rows={[
-          ["配置方式", "装饰器", "独立类"],
-          ["跨字段验证", "有限", "完整支持"],
-          ["异步验证", "支持", "支持"],
-          ["数据库存在性检查", "手动", "内置支持"],
-          ["消息自定义", "简单", "强大"],
-          ["性能", "反射", "编译期表达式"],
+          ["配置方式", "装饰器写在 DTO 上", "独立 Validator 类"],
+          ["跨字段验证", "有限（常要自定义装饰器）", "RuleFor(x => x) + Must 完整支持"],
+          ["异步验证", "支持", "支持（MustAsync）"],
+          ["数据库存在性检查", "手动", "可在 Validator 里注入 Service"],
+          ["消息自定义", "简单", "WithMessage / 本地化更强"],
+          ["性能", "反射", "编译期表达式树"],
         ]}
       />
 
       <h3>Minimal API — 轻量 API 入口方式</h3>
       <p>
-        .NET 6 引入的轻量级 API 定义方式，不需要 Controller 类，适合小型服务、网关、内部 API 和函数式端点组织：
+        .NET 6 引入的轻量级 API 定义方式，不需要 Controller 类，适合小型服务、网关、内部 API 和函数式端点组织。
+        心智模型：像 Express 的 <code>app.get(&apos;/x&apos;, handler)</code>，或 Nest
+        里不用 class、直接挂路由函数。
+      </p>
+      <p>
+        参数列表里的服务类型（如 <code>IProjectService</code>
+        ）会从 DI 解析——这叫<strong>参数注入</strong>，不必写构造函数。简单类型从路由/查询绑定，复杂类型默认从
+        Body 绑定（和 Minimal API 的约定一致）。
       </p>
 
       <LessonCode
@@ -240,18 +267,21 @@ builder.Services.AddValidatorsFromAssemblyContaining<CreateWorkItemRequestValida
 app.UseAuthentication();
 app.UseAuthorization();
 
-// 路由分组（类似 NestJS 的 GlobalPrefix + Controller prefix）
+// MapGroup：公共前缀 + 可链式 RequireAuthorization（组内端点默认要登录）
+// 类似 NestJS 的 GlobalPrefix + Controller prefix + @UseGuards 挂在 Controller 上
 var projectsGroup = app.MapGroup("/api/projects").RequireAuthorization();
 var workItemsGroup = app.MapGroup("/api/work-items").RequireAuthorization();
 
-// 创建项目 — 类似 NestJS @Post()
+// MapPost：POST /api/projects/
+// request 从 Body 绑定；projects 从 DI 注入
 projectsGroup.MapPost("/", async (CreateProjectRequest request, IProjectService projects) =>
 {
     var project = await projects.CreateAsync(request);
+    // Results.* ≈ ControllerBase 的 Ok/Created/NotFound 工厂
     return Results.Created($"/api/projects/{project.Id}", project);
 });
 
-// 获取任务 — 类似 NestJS @Get(':id')
+// MapGet：GET /api/work-items/{id}；id 来自路由段
 workItemsGroup.MapGet("/{id}", async (string id, IWorkItemService service) =>
 {
     var item = await service.GetByIdAsync(id);
@@ -270,8 +300,9 @@ app.Run();`}
           ["代码量", "少 60-80%", "传统模式"],
           ["学习曲线", "低（类似 TS 函数）", "中等"],
           ["依赖注入", "参数即 DI", "构造函数注入"],
+          ["返回值", "Results.Ok / Created / ...", "Ok() / CreatedAtAction() / ..."],
           ["测试", "直接测试端点函数", "需模拟 ControllerBase"],
-          ["NestJS 对照", "类似 @Controller + @Get 函数", "类似 @Controller 类"],
+          ["NestJS 对照", "类似 app 上直接挂 handler", "类似 @Controller 类"],
         ]}
       />
 
@@ -284,17 +315,22 @@ app.Run();`}
         Endpoint Filters 适合 Minimal API 的单个端点或端点组拦截。它<strong>不是</strong>{" "}
         Middleware、Controller Filter 或 <code>[Authorize]</code> 的通用替代品：
       </p>
+      <p>
+        执行时机：路由已匹配到该端点之后、handler 运行前后。可短路返回{" "}
+        <code>Results.BadRequest(...)</code>，也可 <code>await next(context)</code>{" "}
+        后改写结果。对照：比全局 Middleware 细，比 Nest Interceptor 更贴「单个路由」。
+      </p>
 
       <LessonCode
-        code={`// 替代 NestJS Guard
+        code={`// 挂在单个 MapGet 上：只影响这一条路由
 app.MapGet("/work-items/{id}", async (string id, IWorkItemService service) =>
     await service.GetByIdAsync(id))
     .AddEndpointFilter(async (context, next) =>
     {
-        // 类似 canActivate()
+        // context：本次调用参数 + HttpContext；next：真正的 handler（或下一个 Filter）
         var workItemId = context.HttpContext.Request.RouteValues["id"]?.ToString();
         if (workItemId == null)
-            return Results.BadRequest("Invalid ID");
+            return Results.BadRequest("Invalid ID"); // 短路，不进 handler
         return await next(context);
     });`}
         language="csharp"
@@ -302,8 +338,8 @@ app.MapGet("/work-items/{id}", async (string id, IWorkItemService service) =>
       />
 
       <ul>
-        <li>Endpoint Filter = Guard（决定是否处理请求）</li>
-        <li>Endpoint Filter + Result 修改 = Interceptor（修改请求/响应）</li>
+        <li>Endpoint Filter 做「能不能进 handler」≈ Nest Guard 的 canActivate</li>
+        <li>Endpoint Filter 改 Result ≈ Nest Interceptor 改响应</li>
         <li>比 Middleware 更细粒度（针对特定端点，不是全局管道）</li>
       </ul>
 
@@ -315,21 +351,33 @@ app.MapGet("/work-items/{id}", async (string id, IWorkItemService service) =>
 
       <h3>OpenAPI / Swagger API 文档</h3>
       <LessonQuote>
-        先区分两件事：OpenAPI 是<strong>机器可读的 API 描述</strong>，Swagger UI
-        是<strong>展示和调试 OpenAPI 的页面</strong>。.NET 9+ 可以用{" "}
-        <code>Microsoft.AspNetCore.OpenApi</code> 生成 OpenAPI 文档；需要浏览器中的
-        Swagger UI 时，仍可用 Swashbuckle 或 Scalar 等 UI 工具。
+        先区分两件事：OpenAPI 是<strong>机器可读的 API 描述</strong>（一份 JSON/YAML
+        契约，前端可用来生成类型），Swagger UI / Scalar 是
+        <strong>展示和调试这份契约的网页</strong>
+        。很多人把「Swagger」当作文档总称，实际要分清「文档数据」和「文档 UI」。
       </LessonQuote>
+      <p>
+        对照 NestJS：<code>@nestjs/swagger</code> 的{" "}
+        <code>SwaggerModule.createDocument</code> ≈ 生成 OpenAPI；
+        <code>SwaggerModule.setup(&apos;api&apos;, ...)</code> ≈ 挂 UI。在 .NET
+        里这两步也是分开注册的。
+      </p>
 
       <h4>.NET 9+ 内置 OpenAPI</h4>
+      <p>
+        <code>AddOpenApi</code> + <code>MapOpenApi</code> 只产出文档端点（常见{" "}
+        <code>/openapi/v1.json</code>
+        ），<strong>不带</strong>浏览器 UI。需要点一点试接口时，再加 Swashbuckle 的
+        Swagger UI 或 Scalar。
+      </p>
       <LessonCode
-        code={`builder.Services.AddOpenApi();
+        code={`builder.Services.AddOpenApi(); // 注册 OpenAPI 文档生成服务
 
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi(); // 暴露 OpenAPI JSON 端点（无 UI）
 }`}
         language="csharp"
         title="内置 OpenAPI"
@@ -341,7 +389,9 @@ if (app.Environment.IsDevelopment())
       </p>
 
       <LessonCode
-        code={`dotnet add TaskHub.Api/TaskHub.Api.csproj package Swashbuckle.AspNetCore --version 7.1.0`}
+        code={`# --version 钉死版本，避免 major 升级悄悄改 API
+# 副作用：写入 csproj PackageReference，需能访问 NuGet
+dotnet add TaskHub.Api/TaskHub.Api.csproj package Swashbuckle.AspNetCore --version 7.1.0`}
         language="bash"
         title="安装 Swashbuckle"
       />
@@ -351,7 +401,7 @@ if (app.Environment.IsDevelopment())
 using Microsoft.OpenApi.Models;
 
 // 2. builder.Services 部分添加：
-builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddEndpointsApiExplorer(); // 收集端点元数据，供 Swagger 生成用
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo
@@ -361,7 +411,7 @@ builder.Services.AddSwaggerGen(c =>
         Description = "任务协作系统后端 API"
     });
 
-    // JWT 认证支持
+    // 让 Swagger UI 右上角出现 Authorize，可填 Bearer Token
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -376,24 +426,31 @@ builder.Services.AddSwaggerGen(c =>
 // 3. var app = builder.Build(); 之后，开发环境判断内添加：
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwagger();   // 提供 swagger.json
+    app.UseSwaggerUI(); // 浏览器打开 /swagger 调试
 }`}
         language="csharp"
         title="Program.cs 完整 Swashbuckle 配置"
       />
+      <p>
+        跑起来后开发环境访问 <code>/swagger</code> 应看到 UI；
+        <code>/swagger/v1/swagger.json</code> 是原始 OpenAPI 文档。生产环境示例用{" "}
+        <code>IsDevelopment()</code> 包住，避免把调试 UI 暴露到公网。
+      </p>
 
       <h4>Controller 中的 Swagger 装饰</h4>
       <p>
         用 XML 注释和 <code>[ProducesResponseType]</code>{" "}
-        声明返回类型与状态码，让文档更完整：
+        声明返回类型与状态码，让文档更完整。对照 Nest：类似{" "}
+        <code>@ApiOkResponse</code> / <code>@ApiResponse</code>。
       </p>
 
       <LessonCode
         code={`/// <summary>
-/// 创建任务
+/// 创建任务 — 出现在 Swagger 操作描述里（需开启 XML 注释生成，可选）
 /// </summary>
 [HttpPost]
+// 告诉文档生成器：成功是 201 + WorkItemSummaryDto；失败可能是 400 校验错误
 [ProducesResponseType(typeof(WorkItemSummaryDto), StatusCodes.Status201Created)]
 [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
 public async Task<ActionResult<WorkItemSummaryDto>> Create([FromBody] CreateWorkItemRequest request)
@@ -407,7 +464,14 @@ public async Task<ActionResult<WorkItemSummaryDto>> Create([FromBody] CreateWork
 
       <h3>DTO ↔ Entity 映射</h3>
       <p>
-        在 Controller 和 Service 中经常需要把 Entity 转换为 DTO（或反向）。课程主线全程使用手动映射（<code>new WorkItemSummaryDto(...)</code>），这在小项目中够用，而且好处是映射逻辑完全透明。当字段差异变大时，可以考虑 <code>Mapster</code> 或 <code>AutoMapper</code>，但不要因为"看起来高级"而过早引入。
+        在 Controller 和 Service 中经常需要把 Entity 转换为 DTO（或反向）。课程主线全程使用手动映射（<code>new WorkItemSummaryDto(...)</code>），这在小项目中够用，而且好处是映射逻辑完全透明。当字段差异变大时，可以考虑 <code>Mapster</code> 或 <code>AutoMapper</code>，但不要因为&quot;看起来高级&quot;而过早引入。
+      </p>
+      <p>
+        对照 TS：就是手写{" "}
+        <code>{"{ id: entity.id, title: entity.title }"}</code>
+        ，或 class-transformer 的 <code>plainToInstance</code>
+        。扩展方法 <code>ToDto(this WorkItem)</code> 让调用变成{" "}
+        <code>item.ToDto()</code>，读起来顺。
       </p>
       <LessonCode
         code={`// 手动映射（课程主线使用的方式）
@@ -492,6 +556,10 @@ public static WorkItemSummaryDto ToDto(this WorkItem item) => new(
         <li>Controller 和 Minimal API 各自适合什么场景？</li>
         <li>OpenAPI 和 Swagger UI 是同一件事吗？</li>
         <li>FluentValidation 相比 Data Annotations 在跨字段验证上有什么优势？</li>
+        <li>
+          <code>AddOpenApi</code> 和 <code>AddSwaggerGen</code>{" "}
+          哪个自带浏览器调试 UI？
+        </li>
       </ul>
 
       <TeacherTask title="Phase 1 项目状态">

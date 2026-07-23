@@ -90,16 +90,36 @@ dotnet tool install dotnet-ef`}
         对应一张表；<code>OnModelCreating</code> 替代 TypeORM 的{" "}
         <code>@Entity</code> 装饰器，集中做实体配置。
       </p>
+      <p>
+        用 TS 心智模型拆开三块：
+      </p>
+      <ul>
+        <li>
+          <strong>DbContext</strong> ≈ 一次请求内的「数据库会话 + 事务边界」。
+          不是全局单例 Repository；更像 TypeORM 的{" "}
+          <code>EntityManager</code> / Prisma 的一次 client 使用范围。
+        </li>
+        <li>
+          <strong>DbSet&lt;T&gt;</strong> ≈ 这张表的入口：
+          <code>_context.WorkItems</code> 用来查询/增删，不是「已经加载的数组」。
+        </li>
+        <li>
+          <strong>Change Tracker</strong>：查出来的实体默认被记住；你改属性后，
+          <code>SaveChangesAsync</code> 会生成 UPDATE。只读列表若不需要追踪，加{" "}
+          <code>AsNoTracking()</code>（见后文与关系课）。
+        </li>
+      </ul>
 
       <LessonCode
         code={`using Microsoft.EntityFrameworkCore;
 
 public class TaskHubDbContext : DbContext
 {
+    // options 由 DI 注入：连接串、Provider（Npgsql）等在 Program.cs 注册时配好
     public TaskHubDbContext(DbContextOptions<TaskHubDbContext> options)
         : base(options) { }
 
-    // DbSet — 每个 DbSet 对应一个表
+    // DbSet — 每个属性对应一张表的入口（不是内存列表）
     public DbSet<User> Users => Set<User>();
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
@@ -107,15 +127,15 @@ public class TaskHubDbContext : DbContext
     public DbSet<WorkItemComment> WorkItemComments => Set<WorkItemComment>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
-    // 重写配置 — 替代 TypeORM 的 @Entity 装饰器
+    // 模型配置入口 — 替代 TypeORM 散落的 @Entity / @Column
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        // 实体配置
+        // 扫描本程序集里所有 IEntityTypeConfiguration<T> 并应用
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(TaskHubDbContext).Assembly);
 
-        // 全局查询过滤器（类似软删除）
+        // 全局查询过滤器：之后所有查询默认带上这些条件（软删除 / 未归档）
         modelBuilder.Entity<User>()
             .HasQueryFilter(u => u.IsActive);
 
@@ -128,13 +148,44 @@ public class TaskHubDbContext : DbContext
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        // Provider 中立的约定：限制默认长度，具体列类型交给数据库 provider 映射
+        // 全局约定：所有 string 默认最长 500（具体列类型仍由 Provider 映射）
         configurationBuilder.Properties<string>()
             .HaveMaxLength(500);
     }
 }`}
         language="csharp"
         title="TaskHubDbContext"
+      />
+
+      <LessonTable
+        headers={["成员", "干什么", "TS / ORM 对照"]}
+        rows={[
+          [
+            "DbSet<T> / Set<T>()",
+            "表入口：查询、Add、Remove",
+            "repository 或 prisma.xxx，但是会话内的",
+          ],
+          [
+            "OnModelCreating",
+            "集中配置表结构、关系、过滤器",
+            "TypeORM 的 entity 装饰器 / Prisma schema",
+          ],
+          [
+            "ApplyConfigurationsFromAssembly",
+            "加载分散的 IEntityTypeConfiguration 类",
+            "把配置从巨石 OnModelCreating 拆出去",
+          ],
+          [
+            "HasQueryFilter",
+            "默认 WHERE，常用于软删除",
+            "全局 scope；管理后台要 IgnoreQueryFilters()",
+          ],
+          [
+            "ConfigureConventions",
+            "默认列规则（长度、精度）",
+            "无直接对应；减少重复 Fluent 配置",
+          ],
+        ]}
       />
 
       <LessonQuote>
@@ -274,7 +325,9 @@ _context.Entry(item).State = EntityState.Detached; // 停止追踪`}
       </p>
 
       <LessonCode
-        code={`# 创建迁移
+        code={`# 创建迁移：对比「当前模型」和「已有迁移历史」，生成 C# 迁移类
+# --project：DbContext 所在项目（模型与迁移文件落在这里）
+# --startup-project：能跑起来的项目（读 appsettings、DI 注册）
 dotnet ef migrations add AddTaskHubCoreTables \
     --project TaskHub.Infrastructure \
     --startup-project TaskHub.Api
@@ -282,14 +335,14 @@ dotnet ef migrations add AddWorkItemComments \
     --project TaskHub.Infrastructure \
     --startup-project TaskHub.Api
 
-# 应用迁移到数据库
+# 应用迁移：执行尚未应用的迁移 SQL，改真实数据库
 dotnet ef database update --project TaskHub.Infrastructure --startup-project TaskHub.Api
 
-# 回滚迁移
+# 回滚：update 到指定迁移名；0 表示清空所有迁移（危险，学习环境再用）
 dotnet ef database update 0 --project TaskHub.Infrastructure --startup-project TaskHub.Api
 dotnet ef database update AddTaskHubCoreTables --project TaskHub.Infrastructure --startup-project TaskHub.Api
 
-# 从已有数据库反向生成 DbContext 和实体（Database First）
+# Database First：从已有库反向生成实体（本课主线是 Code First，了解即可）
 dotnet ef dbcontext scaffold "Host=localhost;Database=taskhub;Username=postgres;Password=postgres" \
     Npgsql.EntityFrameworkCore.PostgreSQL \
     --context TaskHubDbContext \
@@ -297,6 +350,42 @@ dotnet ef dbcontext scaffold "Host=localhost;Database=taskhub;Username=postgres;
     --context-dir Data`}
         language="bash"
         title="dotnet ef 迁移命令"
+      />
+
+      <LessonTable
+        headers={["命令 / flag", "干什么", "副作用"]}
+        rows={[
+          [
+            "migrations add <Name>",
+            "生成迁移 C# 文件",
+            "不改数据库；Name 进入类名与历史",
+          ],
+          [
+            "--project",
+            "DbContext 与迁移所在 csproj",
+            "迁出文件写入该项目",
+          ],
+          [
+            "--startup-project",
+            "启动项目（配置 + DI）",
+            "EF 靠它找到连接串和 DbContext 注册",
+          ],
+          [
+            "database update",
+            "把未应用迁移打到数据库",
+            "改表结构；可指定目标迁移名回滚",
+          ],
+          [
+            "database update 0",
+            "回滚到空库（无迁移）",
+            "删掉迁移创建的对象，学习库慎用",
+          ],
+          [
+            "dbcontext scaffold",
+            "从库生成实体代码",
+            "覆盖/生成 Models；与 Code First 主线相反",
+          ],
+        ]}
       />
 
       <p>

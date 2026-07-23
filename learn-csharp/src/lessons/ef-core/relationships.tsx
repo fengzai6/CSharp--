@@ -38,6 +38,13 @@ export const EfRelationshipsLesson = ({
         一个项目有多条任务，任务必须属于一个项目。这是 TaskHub
         最核心的一对多关系。
       </p>
+      <p>
+        两套东西一起出现：<strong>导航属性</strong>（C# 对象图）和{" "}
+        <strong>外键字段</strong>（表上的列）。
+        <code>WorkItem.Project</code> 方便写代码跳转；
+        <code>WorkItem.ProjectId</code> 才是库里真正的 FK。
+        TypeORM 的 <code>@ManyToOne</code> + <code>@JoinColumn</code> 是同一回事，只是 EF 更常把配置写在 Fluent API 里。
+      </p>
 
       <LessonCode
         code={`public class Project : BaseEntity
@@ -46,33 +53,47 @@ export const EfRelationshipsLesson = ({
     public string? Description { get; set; }
     public DateTime? ArchivedAt { get; set; }
 
+    // 导航：一侧的集合（默认不自动加载，见 Include / 投影）
     public List<WorkItem> WorkItems { get; set; } = new();
     public List<ProjectMember> Members { get; set; } = new();
 }
 
 public class WorkItem : BaseEntity
 {
-    public string ProjectId { get; set; } = string.Empty;
+    public string ProjectId { get; set; } = string.Empty; // 外键列
     public string Title { get; set; } = string.Empty;
     public WorkItemStatus Status { get; set; } = WorkItemStatus.Todo;
 
-    public Project Project { get; set; } = null!;
+    public Project Project { get; set; } = null!; // 导航：多对一
 }
 
+// IEntityTypeConfiguration<T>：把关系配置从实体类上拆出去
 public class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
 {
     public void Configure(EntityTypeBuilder<WorkItem> builder)
     {
+        // HasOne + WithMany + HasForeignKey = 多对一 / 一对多
         builder.HasOne(item => item.Project)
             .WithMany(project => project.WorkItems)
             .HasForeignKey(item => item.ProjectId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.Cascade); // 删项目时级联删任务
 
+        // 复合索引：列表常按项目 + 状态筛
         builder.HasIndex(item => new { item.ProjectId, item.Status });
     }
 }`}
         language="csharp"
         title="Project → WorkItem"
+      />
+      <LessonTable
+        headers={["API", "意思"]}
+        rows={[
+          ["HasOne / WithMany", "多端有一个父；父端有多个子"],
+          ["HasForeignKey", "指定 FK 属性（ProjectId）"],
+          ["OnDelete(Cascade)", "删父时级联删子（按业务选 Restrict / SetNull）"],
+          ["HasIndex", "建索引，加速查询，不改变关系语义"],
+          ["null!", "告诉编译器「保存/查询后会有值」；不是运行时魔法"],
+        ]}
       />
 
       <h3>多对多：ProjectMember 连接实体</h3>

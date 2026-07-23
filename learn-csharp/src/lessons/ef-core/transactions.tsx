@@ -32,6 +32,14 @@ export const EfTransactionsLesson = ({
       <p>
         状态流转通常不只是改一个字段，还要校验成员权限、更新任务、写入操作记录。这类多步写入应放进同一个事务。
       </p>
+      <p>
+        对照：TypeORM 的 <code>manager.transaction(...)</code>、Prisma 的{" "}
+        <code>$transaction</code>。EF 里{" "}
+        <code>BeginTransactionAsync</code> 打开数据库事务；
+        <code>SaveChangesAsync</code> 只是把 Change Tracker 里的变更写成 SQL，
+        <strong>还要</strong> <code>CommitAsync</code> 才真正提交事务。
+        一步失败就 <code>RollbackAsync</code>，避免「任务改了、评论没写上」的半成功状态。
+      </p>
 
       <LessonCode
         code={`public async Task<WorkItemSummaryDto> MoveWorkItemAsync(
@@ -39,6 +47,7 @@ export const EfTransactionsLesson = ({
     WorkItemStatus nextStatus,
     string operatorId)
 {
+    // await using：事务结束时自动 Dispose（类似 using + await）
     await using var transaction = await _context.Database.BeginTransactionAsync();
 
     try
@@ -58,9 +67,11 @@ export const EfTransactionsLesson = ({
         if (!isMember)
             throw new UnauthorizedAccessException("不是项目成员");
 
+        // 改已追踪实体 → SaveChanges 时生成 UPDATE
         item.Status = nextStatus;
         item.Touch();
 
+        // 同事务内再插一条评论（操作日志）
         _context.WorkItemComments.Add(new WorkItemComment
         {
             WorkItemId = item.Id,
@@ -68,20 +79,25 @@ export const EfTransactionsLesson = ({
             Content = $"状态变更为 {nextStatus}"
         });
 
-        await _context.SaveChangesAsync();
-        await transaction.CommitAsync();
+        await _context.SaveChangesAsync(); // 写出 SQL，但仍在事务中
+        await transaction.CommitAsync();   // 提交事务
 
         return new WorkItemSummaryDto(item.Id, item.ProjectId, item.Title, item.Status, null, item.DueDate);
     }
     catch
     {
-        await transaction.RollbackAsync();
+        await transaction.RollbackAsync(); // 全部撤回
         throw;
     }
 }`}
         language="csharp"
         title="任务状态流转事务"
       />
+      <LessonQuote>
+        单次 <code>SaveChangesAsync</code> 本身已在一个隐式事务里。
+        只有「多次 SaveChanges / 混用原生 SQL / 必须中间读已写入数据」时，才需要显式{" "}
+        <code>BeginTransactionAsync</code>。不要给每个简单 INSERT 都套一层事务模板。
+      </LessonQuote>
 
       <h3>悲观锁</h3>
       <p>
@@ -96,7 +112,7 @@ export const EfTransactionsLesson = ({
     try
     {
         var project = await _context.Projects
-            .FromSqlInterpolated($"SELECT * FROM \"Projects\" WHERE \"Id\" = {projectId} FOR UPDATE")
+            .FromSqlInterpolated($"""SELECT * FROM "Projects" WHERE "Id" = {projectId} FOR UPDATE""")
             .FirstOrDefaultAsync();
 
         if (project is null)

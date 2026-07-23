@@ -38,10 +38,17 @@ export const SignalrAuthReconnectLesson = ({
         SignalR 复用 Auth 章节配置的 JWT Bearer 认证。浏览器 WebSocket / SSE 常通过 <code>access_token</code> 查询参数传 token，需要在 <code>OnMessageReceived</code> 中只对 Hub 路径取出它（见 Auth 章节示例）。
       </p>
       <p>
+        为何要 query？普通 REST 用 <code>Authorization: Bearer ...</code> 头；
+        浏览器原生 WebSocket API <strong>不能自定义请求头</strong>，SignalR 浏览器客户端会在协商时把 token 放到{" "}
+        <code>?access_token=</code>。服务端在 <code>OnMessageReceived</code> 里把该参数写回{" "}
+        <code>context.Token</code>，后面的 JWT 中间件才能验签。非浏览器（.NET 客户端等）仍可走 Header。
+      </p>
+      <p>
         只需确认 <code>Program.cs</code> 中有以下注册：
       </p>
       <LessonCode
         code={`// 复用 Auth 章节的 JWT 配置，这里只列 SignalR 相关部分
+// 顺序仍是：先认证再授权，再映射 Hub
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -56,20 +63,27 @@ app.MapHub<ProjectNotificationHub>("/hubs/projects");`}
       <h3>前端连接</h3>
       <p>
         前端使用 <code>@microsoft/signalr</code> 客户端库，通过 <code>accessTokenFactory</code> 提供当前登录用户的 Access Token。
+        不是 <code>socket.io-client</code>；API 也不同：
+        <code>invoke</code> 调服务端方法，<code>on</code> 收服务端 <code>SendAsync</code> 的事件名。
       </p>
 
       <LessonCode
         code={`import * as signalR from "@microsoft/signalr";
 
 const connection = new signalR.HubConnectionBuilder()
+    // withUrl：必须与 MapHub 路径一致
     .withUrl("https://api.example.com/hubs/projects", {
+        // 每次协商/重连都会调用，返回当前 Access Token
         accessTokenFactory: () => localStorage.getItem("accessToken") ?? "",
+        // 优先 WebSockets；失败时可降级（本例强制 WS 便于调试）
         transport: signalR.HttpTransportType.WebSockets,
     })
+    // 断线后按毫秒间隔重试：立刻、2s、5s、10s、30s
     .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
     .configureLogging(signalR.LogLevel.Information)
     .build();
 
+// on：订阅服务端 SendAsync 的事件名（大小写按服务端字符串）
 connection.on("ProjectJoined", (data) => {
     console.log("Project joined", data.projectId);
 });
@@ -82,6 +96,7 @@ connection.on("WorkItemCommentAdded", (comment) => {
     console.log("Work item comment added", comment.content);
 });
 
+// start：真正建立连接；失败会抛错
 await connection.start();`}
         language="typescript"
         title="前端建立项目通知连接"
@@ -90,12 +105,15 @@ await connection.start();`}
       <h3>加入项目通知通道</h3>
       <p>
         前端不直接决定自己能不能加入项目。它调用 <code>JoinProject</code>，后端 Hub 根据 <code>Context.User</code> 和 <code>ProjectMember</code> 校验成员关系。
+        <code>invoke</code> ≈「RPC 调 Hub 上的公开方法」，不是 Socket.IO 的任意 <code>emit</code> 事件名。
       </p>
 
       <LessonCode
-        code={`const currentProjectIds = new Set<string>();
+        code={`// 本地记「业务上我在听哪些项目」——重连后要靠它恢复
+const currentProjectIds = new Set<string>();
 
 async function joinProject(projectId: string) {
+    // invoke 方法名必须与 Hub 公开方法一致（JoinProject）
     await connection.invoke("JoinProject", projectId);
     currentProjectIds.add(projectId);
 }
@@ -113,14 +131,17 @@ await joinProject("project-001");`}
       <h3>断线重连与项目恢复</h3>
       <p>
         重连会产生新的 <code>ConnectionId</code>，旧连接加入的 SignalR Groups 不会迁移到新连接。前端要记录当前业务上下文，并在重连成功后重新加入项目通道。
+        类比 Socket.IO：<code>reconnect</code> 后也要重新 <code>join</code> room——框架不会替你记住业务房间。
       </p>
 
       <LessonCode
         code={`connection.onreconnecting((error) => {
+    // 正在重试：UI 可显示「实时连接恢复中」
     console.warn("Project notification connection is reconnecting", error);
 });
 
 connection.onreconnected(async (connectionId) => {
+    // 新 ConnectionId，旧 Group 成员资格已失效
     console.log("Project notification reconnected", connectionId);
 
     for (const projectId of currentProjectIds) {
@@ -128,12 +149,14 @@ connection.onreconnected(async (connectionId) => {
             await connection.invoke("JoinProject", projectId);
             console.log("Project notification restored", projectId);
         } catch (error) {
+            // 成员被移除等业务失败：从本地集合删掉，避免死循环重试
             console.error("Failed to restore project notification", projectId, error);
         }
     }
 });
 
 connection.onclose((error) => {
+    // 自动重连耗尽或手动 stop 后进入
     console.error("Project notification connection closed", error);
 });`}
         language="typescript"
